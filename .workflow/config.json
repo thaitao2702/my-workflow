@@ -1,0 +1,29 @@
+{
+  "project_name": "",
+  "rules": {
+    "plan_review": ".workflow/rules/planning/",
+    "code_review": ".workflow/rules/code/"
+  },
+  "templates": {
+    "index": ".workflow/templates/index.md"
+  },
+  "tdd_policy": "pragmatic",
+  "tdd_exceptions": ["UI layout/styling", "config files", "type definitions"],
+  "playwright_check": true,
+  "auto_commit": false,
+  "jira": {
+    "base_url": "",
+    "auth_env_var": "JIRA_TOKEN",
+    "default_project": ""
+  },
+  "model_overrides": {
+    "planner": "opus",
+    "executor": "sonnet",
+    "reviewer": "sonnet",
+    "analyzer": "opus",
+    "analyzer_update": "sonnet",
+    "doc_updater": "sonnet",
+    "template_extractor": "opus",
+    "template_applier": "sonnet"
+  }
+}
