@@ -11,18 +11,42 @@ Extract a repeatable implementation pattern from completed work. Captures steps,
 
 ## Step 1: Gather Source Material
 
-Ask the user: **"What work should I analyze to create this template?"**
+### Option A: From a completed execution (richest source)
 
-Offer options:
-- **Git range:** "last 5 commits" or a commit range like `abc123..def456`
+Check if there's a recently completed plan:
+
+1. Look for plan directories in `.workflow/plans/` with `status: completed` in `state.json`
+2. If found, present: "I see you completed **{plan-name}**. Create the template from this execution?"
+3. If yes — auto-load everything from the execution context:
+   - **Plan intent:** run `python .claude/scripts/workflow_cli.py plan get summary` — why it was built
+   - **What changed:** `git diff {execution_start_commit}..HEAD` — the full implementation diff
+   - **Affected components:** read from phase files via `python .claude/scripts/workflow_cli.py plan get` — which components were touched
+   - **Component knowledge:** read `.analysis.md` files for all affected components — hidden details, integration patterns, architecture
+   - **Task structure:** run `python .claude/scripts/workflow_cli.py phase tasks {N}` for each phase — how the work was broken down (this often maps directly to template steps)
+
+This is the richest source because you have: what was built (diff), why (plan summary), how it was structured (phases/tasks), and deep component knowledge (analysis docs).
+
+### Option B: From git history
+
+If no completed execution or user prefers:
+- **Git range:** "last 5 commits" or `abc123..def456`
+- **Branch diff:** `git diff main..HEAD` for the current feature branch
+- Run `git log` and `git diff` to extract changed files and diffs
+
+### Option C: From existing code
+
 - **File paths:** specific files that form the pattern
-- **Existing component:** a component path (will read its `.analysis.md` if available)
-- **Mixed:** any combination + verbal description of intent
+- **Component path:** a component path (will read its `.analysis.md` if available)
+- Read current state of those files
 
-Based on user's answer:
-- Git range → run `git log` and `git diff` to extract changed files and diffs
-- File paths → read current state of those files
-- Component path → read component source + its `.analysis.md` if it exists
+### Option D: Mixed
+
+Any combination of the above + verbal description from the user.
+
+### For all options — also gather
+
+- `.analysis.md` files for touched components (if they exist) — hidden details and integration patterns the raw diff doesn't show
+- Project overview — `.workflow/project-overview.md` — architectural context
 
 ## Step 2: Pattern Extraction
 
@@ -46,6 +70,8 @@ The agent analyzes the source and identifies:
 - **Gotchas** — non-obvious things learned during the original work
 
 The agent produces: `template.md` content + reference file contents.
+
+The agent uses multi-case reasoning internally to find the right abstraction level — it imagines other scenarios that would use this pattern to determine what's truly fixed vs parametric vs guided.
 
 ## Step 3: User Review
 

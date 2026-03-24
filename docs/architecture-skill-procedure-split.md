@@ -89,10 +89,14 @@ User types /plan
 │   ├── template-extractor.md     ← Extracts pattern from source code
 │   └── template-applier.md       ← Fills template variables
 │
+├── scripts/                      ← CLI tools
+│   └── workflow_cli.py           ← Plan/phase/state JSON read/write CLI
+│
 ├── rules/                        ← Passive context (always loaded)
 │   ├── quality-criteria.md
 │   ├── tdd-policy.md
-│   └── security-gates.md
+│   ├── security-gates.md
+│   └── resume-protocol.md
 │
 ├── hooks/                        ← Lifecycle hooks
 │   ├── pre_tool_use.py

@@ -4,29 +4,41 @@ description: "Assess change significance and update component documentation"
 
 # /doc-update — Documentation Update
 
-Assess whether code changes warrant documentation updates, then apply the appropriate level of update.
+Assess whether code changes warrant documentation updates, then apply the appropriate level of update. Handles both existing analysis docs and components that have never been analyzed.
 
-**Input:** List of affected component paths + git diff (provided by calling skill)
-**Called by:** `/execute` after each phase, or manually
+**Input:** Component path + git diff + optional plan context (provided by calling skill)
+**Called by:** `/execute` Step 3 (final reconciliation), or manually
+
+## Step 0: Check Analysis Doc Exists
+
+Before assessing significance, check if `{component}.analysis.md` exists alongside the source:
+
+1. **Exists** → proceed to Step 1 (normal assessment flow)
+2. **Does NOT exist** → this component has never been analyzed. Two sub-cases:
+   - **Component was created during this execution** (didn't exist at `execution_start_commit`):
+     → This is a brand new component. Use the Skill tool to invoke `/analyze {component-path}` (full mode). Skip Step 1-2 — full analysis covers everything.
+   - **Component existed before but was never analyzed:**
+     → Use the Skill tool to invoke `/analyze {component-path}` (full mode). This fills the gap that planning missed. Skip Step 1-2.
+
+In both cases, after `/analyze` completes, verify the `.analysis.md` was created (artifact check), then DONE for this component.
 
 ## Step 1: Assess Change Significance
 
 Use the Agent tool to spawn a subagent with `.claude/agents/doc-updater.md`.
 
 Provide:
-1. **Git diff** for the changed files
-2. **Existing `.analysis.md`** files for affected components
+1. **Git diff** for the component's files
+2. **Existing `.analysis.md`** file (full content)
 3. **Project overview** — `.workflow/project-overview.md`
+4. **Plan context** (if available) — what was being built and why. This helps the agent assess significance: "a field was added" is ambiguous, but "a field was added as part of the export feature" clarifies intent.
 
-The agent classifies each affected component's changes into one of three levels:
+The agent classifies the changes:
 
 | Level | Meaning | Example | Action |
 |-------|---------|---------|--------|
 | **NO UPDATE** | Trivial change, docs still accurate | Typo fix, log message, dependency bump | Skip — do nothing |
 | **MINOR UPDATE** | Additive change, existing docs mostly accurate | New field, new prop, new endpoint added | Patch `.analysis.md` inline |
 | **MAJOR UPDATE** | Structural change, docs are now misleading | Data flow changed, API contract changed, refactored | Trigger full `/analyze` |
-
-**Why Sonnet for assessment:** This step requires judgment — distinguishing "added a column" from "changed the data flow." Sonnet's judgment saves money: most changes are NO UPDATE or MINOR, avoiding unnecessary full rewrites.
 
 ## Step 2: Apply Updates
 
@@ -44,16 +56,17 @@ Based on the agent's classification:
 
 ### MAJOR UPDATE
 - Use the Skill tool to invoke `/analyze` on the component path
-- This triggers a full or update-mode re-analysis depending on the scope of changes
+- This triggers update-mode or full-mode analysis depending on the scope of changes
 
-## Step 3: Project Overview Check
+## Step 3: Verify
 
-If any component was classified as MAJOR UPDATE:
-- Check if the changes affect the project's overall architecture or module structure
-- If yes: update `.workflow/project-overview.md` with the changes
-- If no: skip
+After any update (MINOR or MAJOR):
+1. Confirm `.analysis.md` exists and has current `last_commit`
+2. Confirm frontmatter fields are populated
 
 ## Constraints
 - Do NOT re-analyze components classified as NO UPDATE — that wastes tokens
 - Do NOT do a full rewrite for MINOR changes — patch inline
+- Do NOT skip Step 0 — always check if the analysis doc exists before assessing
 - Do NOT skip the assessment step — always classify before acting
+- When no plan context is available (manual invocation), assess based on the diff alone

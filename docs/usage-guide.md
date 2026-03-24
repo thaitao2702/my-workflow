@@ -40,7 +40,7 @@ Transforms requirements into a phased, dependency-aware plan with automated qual
 6. Automated 8-dimension review
 7. Present for your approval
 
-**Output:** `.workflow/plans/{date}-{name}/` with `plan.md`, phase files, `state.md`
+**Output:** `.workflow/plans/{date}-{name}/` with `plan.json`, phase JSON files, `state.json`
 
 ### `/execute` — Execute Plan
 
@@ -52,9 +52,9 @@ Transforms requirements into a phased, dependency-aware plan with automated qual
 
 Implements the plan phase-by-phase with TDD, code review, and doc updates.
 
-**Per task:** Write tests → implement → run tests → update state
-**Per phase:** Code review → Playwright check (if UI) → doc updates → regression tests
-**After all phases:** Final reconciliation, full test suite, execution summary
+**Per task:** Write tests → implement → run tests → update state (via CLI)
+**Per phase:** Code review → Playwright check (if UI) → regression tests
+**After all phases:** Final reconciliation (doc updates), full test suite, execution summary
 
 ### `/analyze` — Component Analysis
 
@@ -150,8 +150,9 @@ Each rule file should have: Rule, Why, Correct example, Incorrect example, Excep
 | File | Created by | Purpose |
 |------|-----------|---------|
 | `.workflow/project-overview.md` | `/init` | Project overview (loaded every session) |
-| `.workflow/plans/{dir}/plan.md` | `/plan` | Execution plan |
-| `.workflow/plans/{dir}/state.md` | `/execute` | Execution progress |
+| `.workflow/plans/{dir}/plan.json` | `/plan` | Execution plan |
+| `.workflow/plans/{dir}/phase-{N}.json` | `/plan` | Phase details + tasks |
+| `.workflow/plans/{dir}/state.json` | `/execute` | Execution progress |
 | `{Component}.analysis.md` | `/analyze` | Component deep-dive (co-located) |
 | `.workflow/templates/{name}/template.md` | `/template-create` | Reusable pattern |
 
@@ -161,7 +162,7 @@ If a session is interrupted, the next session automatically detects it:
 
 > "Found interrupted execution: **user-export** — Phase 2, Task 3. Resume with `/execute --resume`."
 
-State is saved in `state.md` with `[>]` markers showing exactly where work stopped, including sub-step progress.
+State is saved in `state.json` — use `python .claude/scripts/workflow_cli.py state current` to see the exact resume point, including sub-step progress. Use `python .claude/scripts/workflow_cli.py state show` for a full readable progress view.
 
 ## Cost Optimization
 

@@ -62,7 +62,7 @@ def main():
     if remaining_pct <= STOP_THRESHOLD:
         message = (
             f"🛑 CONTEXT CRITICAL ({remaining_pct:.0f}% remaining). "
-            f"Save current state to state.md immediately. "
+            f"Save current state to state.json immediately. "
             f"Complete the current task, then STOP execution. "
             f"Do NOT start new tasks. Write a session handoff note."
         )
@@ -70,7 +70,7 @@ def main():
         message = (
             f"⚠️ CONTEXT LOW ({remaining_pct:.0f}% remaining). "
             f"Complete the current task, then consider pausing. "
-            f"Update state.md with current progress. "
+            f"Update state.json with current progress. "
             f"Avoid loading large files or spawning new agents."
         )
     elif remaining_pct <= WARN_THRESHOLD:

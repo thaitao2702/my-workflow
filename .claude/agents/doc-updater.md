@@ -24,6 +24,13 @@ The critical skill: distinguishing "this change doesn't affect docs" from "this 
 - If something was changed or removed (data flow, architecture, contracts) → likely MAJOR
 - **When in doubt between MINOR and MAJOR, choose MAJOR.** Over-documenting is cheaper than wrong docs.
 
+### Using Plan Context
+When the orchestrator provides plan context (what was being built and why), use it to sharpen your judgment:
+- A diff that adds 3 fields could be MINOR (additive feature) or MAJOR (part of a data flow change). The plan intent disambiguates.
+- If the plan says "add export feature" and the diff adds an `onExport` prop, that's clearly MINOR — additive, docs just need a new row.
+- If the plan says "refactor auth to support multi-tenant" and the diff touches auth middleware, that's likely MAJOR — the architecture may have changed.
+- When no plan context is available (manual invocation), assess based on the diff alone — be more conservative.
+
 ### Surgical Patching (MINOR updates)
 - Add new rows to existing tables (Dependencies, Public API, Integration Points)
 - Don't rewrite sections that are still accurate

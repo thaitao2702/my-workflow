@@ -3,7 +3,14 @@
     "allow": [
       "Bash(find 'E:/Project/My Workflow' -name state.md -o -name STATE.md -o -name *context.json -o -name *state*.json)",
       "Bash(find 'E:/Project/My Workflow/my-claude-setup' -type f -name *.md -o -name *.json -o -name *.yml -o -name *.yaml)",
-      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); print\\(data[0][''''text'''']\\)\")"
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); print\\(data[0][''''text'''']\\)\")",
+      "Bash(python .claude/scripts/workflow_cli.py)",
+      "Bash(python .claude/scripts/workflow_cli.py state show --plan-dir .workflow/plans/260323-test)",
+      "Bash(python .claude/scripts/workflow_cli.py state start-phase 1 --plan-dir .workflow/plans/260323-test)",
+      "Bash(python .claude/scripts/workflow_cli.py state complete-task 1 task-02 --plan-dir .workflow/plans/260323-test)",
+      "Bash(python .claude/scripts/workflow_cli.py state complete-phase 1 --plan-dir .workflow/plans/260323-test)",
+      "Bash(python .claude/scripts/workflow_cli.py find-active)",
+      "Bash(python .claude/scripts/workflow_cli.py state current --plan-dir .workflow/plans/260323-test)"
     ]
   }
 }

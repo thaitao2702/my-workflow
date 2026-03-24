@@ -28,19 +28,38 @@ Check if `{component}.analysis.md` already exists alongside the source:
    - **MATCH** (doc is current) → report "Analysis is up to date" and STOP
    - **MISMATCH** (code changed) → proceed with **update mode** (Step 3)
 
+## Step 1.5: Resolve Import Aliases
+
+Before mapping dependencies, resolve any path aliases used in the project. Common alias patterns:
+
+1. Check for alias definitions in: `tsconfig.json` (`paths`), `vite.config.*` (`resolve.alias`), `webpack.config.*` (`resolve.alias`), `package.json` (`imports`), `pyproject.toml` (tool-specific), `.eslintrc` (`import/resolver`)
+2. Build an alias map, e.g.: `@/ → src/`, `~/ → src/`, `#/ → lib/`
+3. When mapping imports in Step 2, resolve aliases to real paths BEFORE classifying as local vs external
+
+**Why:** Aliased imports like `import { auth } from '@/services/authService'` look like external packages but are local code. Treating them as external means skipping their analysis — the component doc will have missing dependency information. Every aliased import that resolves to a path inside the project is a local dependency.
+
 ## Step 2: Dependency Resolution (recursive mode only)
 
 Only runs when `--recursive` flag is present.
 
 1. Read the component's source files
-2. Map all local imports (ignore external packages)
-3. Build a dependency tree
+2. Map all imports. For each import:
+   - Resolve aliases to real paths (using alias map from Step 1.5)
+   - If resolves to a path inside the project → **local dependency** (include)
+   - If resolves to `node_modules`, site-packages, or external registry → **external** (skip)
+   - If ambiguous: check if the path exists on disk. If yes → local. If no → external.
+3. Build a dependency tree from all local dependencies
 4. Order: **leaf → top** (deepest dependencies first)
+   - Example: A depends on B, B depends on C → analyze C first, then B, then A
 5. For each dependency (bottom-up):
    - Run the staleness check (Step 1) on the dependency
    - If stale or missing: use the Skill tool to invoke `/analyze` on the dependency path
-   - If current: skip
-6. After all dependencies are analyzed, proceed to Step 3 for the original component
+   - If current: skip (its `.analysis.md` already exists and is up to date)
+6. **Critical:** After each dependency is analyzed, its `.analysis.md` now exists on disk. The next dependency in the chain can read it. This guarantees:
+   - C is analyzed first → `C.analysis.md` is written
+   - B is analyzed next → B's agent receives `C.analysis.md` as dependency context
+   - A is analyzed last → A's agent receives both `B.analysis.md` and `C.analysis.md`
+7. After ALL dependencies are analyzed, proceed to Step 3 for the original component
 
 ## Step 3: Spawn Analyzer Agent
 
@@ -52,7 +71,7 @@ Provide in the agent prompt:
 - Mode: `full`
 - Component source code (all files in the module, or the single entry file)
 - Test files for this component (if they exist)
-- Dependency `.analysis.md` files (frontmatter + CONTENT section only)
+- Dependency `.analysis.md` files (frontmatter + CONTENT section only) — **read these fresh from disk**, they were just written/confirmed current in Step 2
 - Project overview: `.workflow/project-overview.md`
 - Output path: the co-located `.analysis.md` path determined in Step 0
 - The **output format** below
@@ -64,6 +83,7 @@ Provide in the agent prompt:
 - The existing `.analysis.md` file (full content)
 - Git diff: `git diff {last_commit}..HEAD -- {entry_files}`
 - Current source code (all entry files)
+- Dependency `.analysis.md` files (frontmatter + CONTENT section only) — **read fresh from disk**
 - Project overview: `.workflow/project-overview.md`
 - Output path: same file location (overwrite)
 - The **output format** below

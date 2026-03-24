@@ -29,8 +29,9 @@ Project-specific rules for plan review: `.workflow/rules/planning/`
 Project-specific rules for code review: `.workflow/rules/code/`
 
 ## State & Resume
-Current execution state: `.workflow/plans/{current}/state.md`
-On session start, check for interrupted executions (`status: executing` or `paused` in state.md).
+Plan/phase/state data is stored as JSON in `.workflow/plans/{current}/`.
+Use the workflow CLI for all reads and writes: `python .claude/scripts/workflow_cli.py`
+On session start, check for interrupted executions: `python .claude/scripts/workflow_cli.py find-active`
 Resume with `/execute --resume`.
 
 ## Configuration

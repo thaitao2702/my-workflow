@@ -6,18 +6,34 @@ description: "Execute an approved plan — phase-by-phase with TDD, reviews, sta
 
 You are executing an approved plan phase-by-phase. Track state, enforce TDD, run reviews, maintain codebase knowledge.
 
+**CLI shorthand:** `python .claude/scripts/workflow_cli.py` (all state/plan/phase reads and writes go through this CLI)
+
 **Input:** `/execute` (uses latest approved plan), `/execute {plan-path}`, or `/execute --resume`
 **Output:** Implemented code, updated state, reviewed and documented
 
 ## Step 1: Load Plan
 
-1. If `--resume`: read `.workflow/plans/` to find the plan with `status: executing` in its `state.md`
-2. If path provided: read the specified plan directory
-3. If no argument: find the most recent plan directory in `.workflow/plans/` with `status: approved`
-4. Read: `plan.md`, all `phase-NN-*.md` files, `state.md`
-5. Read: `.workflow/project-overview.md`
-6. Determine: which group to execute next (from dependency graph in plan.md)
-7. If resuming: find `[>]` marker in state.md body, continue from there
+1. If `--resume`: find the active plan:
+   ```
+   python .claude/scripts/workflow_cli.py find-active
+   ```
+2. If path provided: use that plan directory
+3. If no argument: find the most recent approved plan (CLI auto-resolves)
+4. Read plan summary and determine next group:
+   ```
+   python .claude/scripts/workflow_cli.py plan get
+   python .claude/scripts/workflow_cli.py plan phases
+   ```
+5. Read project overview: `.workflow/project-overview.md`
+6. If NOT resuming — record execution start and begin:
+   ```
+   python .claude/scripts/workflow_cli.py state start-execution $(git rev-parse HEAD)
+   ```
+7. If resuming — get the resume point:
+   ```
+   python .claude/scripts/workflow_cli.py state current
+   ```
+   This returns the current phase, task, and any substep progress. Continue from there.
 
 ## Step 2: Execute Groups
 
@@ -26,35 +42,48 @@ Process groups sequentially (A → B → C). Within each group, phases can run i
 ### For each group:
 
 #### Step 2a: Phase Start
-1. Update `state.md`: phase status → `[IN PROGRESS]`
-2. Read phase file to get affected components
+
+1. Mark phase as in progress:
+   ```
+   python .claude/scripts/workflow_cli.py state start-phase {N}
+   ```
+2. Read phase tasks:
+   ```
+   python .claude/scripts/workflow_cli.py phase tasks {N}
+   ```
 3. Load relevant `.analysis.md` files (Level 1: frontmatter + CONTENT)
    - These should exist from planning. If missing → use the Skill tool to invoke `/analyze` as fallback
 4. Prepare executor context
 
 #### Step 2b: Task Execution
 
-For each task in the phase, spawn a subagent with `.claude/agents/executor.md`.
+For each task in the phase:
 
-Provide the agent with:
-1. **Task description + acceptance criteria** from the phase file
-2. **Project overview** — `.workflow/project-overview.md`
-3. **Component analysis docs** — relevant `.analysis.md` files
-4. **Code quality rules** — read all files in `.workflow/rules/code/` (if any exist)
-5. **Source files** being modified (agent reads these)
-6. **TDD policy** — from `.claude/rules/tdd-policy.md`
+1. Mark task as active:
+   ```
+   python .claude/scripts/workflow_cli.py state set-active {N} {task-id}
+   ```
+2. Read task details:
+   ```
+   python .claude/scripts/workflow_cli.py phase task {N} {task-id}
+   ```
+3. Spawn a subagent with `.claude/agents/executor.md`. Provide:
+   - **Task description + acceptance criteria** from the phase task data
+   - **Project overview** — `.workflow/project-overview.md`
+   - **Component analysis docs** — relevant `.analysis.md` files
+   - **Code quality rules** — read all files in `.workflow/rules/code/` (if any exist)
+   - **TDD policy** — from `.claude/rules/tdd-policy.md`
 
-The executor agent:
-1. Writes failing tests first (unless TDD exception applies)
-2. Implements code to pass tests
-3. Runs tests to confirm pass
-4. Returns the result
+4. Track substep progress as the executor works:
+   ```
+   python .claude/scripts/workflow_cli.py state substep {N} {task-id} "Test written" done
+   python .claude/scripts/workflow_cli.py state substep {N} {task-id} "Implementation" next
+   ```
 
-After each task completes, **update state.md**:
-- Mark task `[x]` with ✓
-- If task in progress: use `[>]` marker with sub-progress bullets
-- Update `current_task` in frontmatter
-- Update `last_updated` timestamp
+5. When task completes:
+   ```
+   python .claude/scripts/workflow_cli.py state complete-task {N} {task-id}
+   ```
 
 #### Step 2c: Phase Review
 
@@ -63,7 +92,7 @@ After all tasks in a phase complete, spawn a subagent with `.claude/agents/revie
 Provide:
 1. **All code changes** from this phase (git diff)
 2. **Code quality rules** — `.workflow/rules/code/*.md`
-3. **Phase acceptance criteria** — from the phase file
+3. **Phase acceptance criteria** — from the phase task data (already loaded in Step 2b)
 4. **Component docs** — `.analysis.md` files for affected components
 
 Review checks:
@@ -84,44 +113,76 @@ Only if the phase has `affected_components` that include UI components AND `.wor
 - Check: page loads, no console errors
 - Report to user
 
-#### Step 2e: Documentation Update
+#### Step 2e: Phase Completion
 
-Use the Skill tool to invoke `/doc-update` with the list of affected components and the git diff for this phase.
-
-#### Step 2f: Phase Completion
-
-1. Update `state.md`: phase status → `[COMPLETED]`
+1. Mark phase completed:
+   ```
+   python .claude/scripts/workflow_cli.py state complete-phase {N}
+   ```
 2. Run regression: tests from all prior completed phases still pass
-3. Add entry to Session Log in state.md
-4. Proceed to next group
+3. Proceed to next group
 
-## Step 3: Final Reconciliation
+**Note:** Documentation updates are NOT done per-phase. They happen once in the final reconciliation (Step 3) after all phases complete.
 
-After ALL phases complete:
+## Step 3: Final Reconciliation (Documentation Update)
 
-1. Read all modified files across all phases
-2. For each affected component: run staleness check on its `.analysis.md`
-   - If stale: use the Skill tool to invoke `/doc-update`
-3. Verify `.workflow/project-overview.md` still accurate (update if modules/architecture changed)
-4. Run full test suite
-5. Update `state.md`: status → `completed`
-6. Generate execution summary:
-   - Phases completed, tasks completed
-   - Test results
-   - Review results
-   - Doc updates performed
-7. Present summary to user
+After ALL phases complete, this is the **single point** where documentation gets updated.
+
+### Step 3a: Identify All Changed Components
+
+1. Get the execution start commit:
+   ```
+   python .claude/scripts/workflow_cli.py state get execution_start_commit
+   ```
+2. Get the full diff since execution started: `git diff {start_commit}..HEAD --name-only`
+3. From the changed files, identify which components were affected
+4. Also read affected components from phase files — deduplicate
+
+### Step 3b: Assess and Update Each Component
+
+For each affected component, use the Skill tool to invoke `/doc-update`.
+
+Provide:
+- The component path
+- The full git diff: `git diff {start_commit}..HEAD -- {component_files}`
+- Plan context: run `python .claude/scripts/workflow_cli.py plan get summary` for the plan intent
+
+### Step 3c: Verify Project Overview
+
+1. Check if changes affect project architecture, modules, or data model
+2. If yes: update `.workflow/project-overview.md`
+3. If no: skip
+
+### Step 3d: Final Verification
+
+1. Run full test suite
+2. Mark execution complete:
+   ```
+   python .claude/scripts/workflow_cli.py state complete
+   ```
+3. Display final progress:
+   ```
+   python .claude/scripts/workflow_cli.py state show
+   ```
+4. Present execution summary to user
 
 ## Resume Protocol
 
 When resuming an interrupted session:
 
-1. Read `state.md` frontmatter → `current_phase`, `current_task`, `status`
-2. Find `[>]` marker in body → get sub-progress
-3. Determine resume point:
-   - Mid-task (has `○` markers): continue from the next `○` item
-   - Between tasks: start next `[ ]` task
-   - Between phases: start next `[PENDING]` phase
+1. Find the active plan:
+   ```
+   python .claude/scripts/workflow_cli.py find-active
+   ```
+2. Get resume point:
+   ```
+   python .claude/scripts/workflow_cli.py state current
+   ```
+   Returns: `{"current_phase": 2, "current_task": "task-03", "substeps": [...]}`
+3. Determine resume point from the response:
+   - If substeps exist with `"next"` status → continue from that substep
+   - If current_task exists → continue from that task
+   - If current_phase exists → continue from that phase
 4. Tell user: "Resuming from Phase {N}, Task {M}: {description}"
 5. Continue execution from that point
 
@@ -129,42 +190,55 @@ When resuming an interrupted session:
 
 When a group has multiple phases:
 - Launch each phase as a separate Agent (background if possible)
-- Each agent updates its own section of state.md
+- Each agent uses CLI to update its own phase's state (no file contention — CLI does atomic writes)
 - Wait for all phases in the group to complete
 - Run regression tests after the entire group finishes
+- Documentation updates happen in Step 3, NOT here
 
 ## Error Handling
 
 ### Task Failure (tests won't pass, implementation blocked)
-1. Mark task as `[!]` in state.md with error description
-2. Add error to Session Log with timestamp
-3. Ask user: **retry** (try again), **skip** (mark skipped, continue), or **abort** (pause execution)
-4. If retry: attempt the task again with a different approach (max 2 retries)
-5. If skip: mark `[S]` in state.md, note the skip reason, continue to next task
-6. If abort: set status to `paused`, save full state, report to user
+1. Mark task as failed:
+   ```
+   python .claude/scripts/workflow_cli.py state fail-task {N} {task-id} "reason"
+   ```
+2. Log the error:
+   ```
+   python .claude/scripts/workflow_cli.py state log "Task {task-id} failed: reason"
+   ```
+3. Ask user: **retry**, **skip**, or **abort**
+4. If retry: attempt again with different approach (max 2 retries)
+5. If skip:
+   ```
+   python .claude/scripts/workflow_cli.py state skip-task {N} {task-id} "reason"
+   ```
+6. If abort:
+   ```
+   python .claude/scripts/workflow_cli.py state pause
+   ```
 
 ### Agent Crash (subagent fails to return)
-1. Log the failure in Session Log
-2. Check: did the agent produce any partial output (files written)?
-3. If partial: assess whether partial work is usable or needs rollback
-4. Retry the task with a fresh agent spawn (max 1 retry)
-5. If still failing: escalate to user
+1. Log the failure via CLI
+2. Check: did the agent produce any partial output?
+3. Retry with fresh agent spawn (max 1 retry)
+4. If still failing: escalate to user
 
 ### Test Regression (prior tests break)
 1. Identify which prior phase's tests broke
 2. Check git diff: did current phase's code cause it?
-3. If yes: fix before proceeding (this is a real bug)
-4. If unclear: report to user with the failing test and diff context
+3. If yes: fix before proceeding
+4. If unclear: report to user
 
 ### Review Loop (2 rounds failed)
 1. After 2 failed fix rounds, do NOT keep iterating
-2. Present the review findings to the user
+2. Present review findings to user
 3. Ask: fix manually, provide guidance, or skip review
 
 ## Constraints
 - Do NOT skip TDD unless the task falls under a documented exception
 - Do NOT proceed past a FAILED review without fixing issues or getting user approval
 - Do NOT modify files outside the plan's scope (no scope creep)
-- Do NOT forget to update state.md after every task — this is the resume lifeline
+- Do NOT read or edit state.json directly — always use the CLI
+- Do NOT update documentation per-phase — all doc updates happen in Step 3
 - Do NOT skip the final reconciliation step
 - Max 2 fix rounds per review failure — escalate to user after that
