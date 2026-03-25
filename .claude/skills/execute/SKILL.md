@@ -153,7 +153,63 @@ Provide:
 2. If yes: update `.workflow/project-overview.md`
 3. If no: skip
 
-### Step 3d: Final Verification
+### Step 3d: Post-Execution Reflection
+
+Reflect on what was learned during execution. **Skip this step entirely if nothing significant was discovered.**
+
+This is the most valuable reflection point — execution is where rubber meets road. The gap between "what was planned" and "what actually happened" produces the richest corrections.
+
+**What to look for:**
+
+During task execution, the executor agents may have encountered:
+- **Component behaviors not in the analysis docs** — "authService.validate() throws on expired tokens but returns false on invalid tokens. This wasn't in the Hidden Details."
+- **Plan assumptions that turned out wrong** — "The plan assumed the API supports batch operations, but it only supports single-item calls. I had to implement a loop."
+- **Undocumented dependencies or side effects** — "Updating the user profile also invalidates the session cache. Not documented anywhere."
+- **Conventions or patterns that differ from what project-overview described** — "The overview says services use repository pattern, but the payments module uses direct DB queries."
+
+**What to do:**
+
+Only for **non-trivial findings** that could cause real problems in future work:
+
+1. Present each finding to the user:
+   - "During execution, I discovered: {finding}"
+   - "This should be documented in: {target document}"
+   - "Proposed update: {specific content to add/change}"
+2. If user agrees: apply the update:
+   - Component behavior → update `.analysis.md` Hidden Details table
+   - Wrong plan assumption (repeatable) → add rule to `.workflow/rules/planning/`
+   - Code pattern correction → add/update rule in `.workflow/rules/code/`
+   - Architecture/overview inaccuracy → update `.workflow/project-overview.md`
+3. If user disagrees or finding is trivial: skip it.
+
+**Skip criteria:** Don't surface findings that are:
+- Already captured by the `/doc-update` step (Step 3b handled it)
+- Trivial — typos, minor style differences, obvious things
+- One-off situations with no future relevance
+- Things the user explicitly told you during execution (they already know)
+
+### Step 3e: Template Suggestion
+
+Assess whether the completed work represents a **repeatable pattern**:
+- Did this plan create something that will likely be built again with variations?
+- Are there already similar components in the codebase that followed the same shape?
+- Did the task structure (phases/tasks) reveal a reusable workflow?
+
+If yes, suggest: "This looks like a repeatable pattern ({reason}). Want to create a template now? The full execution context (decisions, discoveries, reasoning) is still fresh — this produces the richest template."
+
+If user agrees: use the Skill tool to invoke `/template-create` with `--from-session` flag.
+
+Pass to the template-extractor agent:
+1. **Plan summary** — what was built and why
+2. **Component intelligence** — from plan + analysis docs
+3. **Phase/task structure** — how work was decomposed
+4. **Git diff** — `git diff {execution_start_commit}..HEAD`
+5. **Execution discoveries** — from Step 3d reflection (wrong assumptions, hidden behaviors)
+6. **Key decisions during execution** — what the executor adapted and why
+
+If user declines: fine. They can run `/template-create` later.
+
+### Step 3f: Final Verification
 
 1. Run full test suite
 2. Mark execution complete:

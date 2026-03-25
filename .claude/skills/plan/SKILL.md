@@ -229,6 +229,60 @@ Present the final plan to the user:
 5. Tell the user: "Plan created at `.workflow/plans/{dir}/`. Run `/execute` to start implementation."
 6. Run `python .claude/scripts/workflow_cli.py state show` to display the initial state.
 
+## Phase F: Post-Planning Reflection
+
+Before handing off to the user, reflect on what was learned during the planning process. **Skip this step entirely if nothing significant was discovered.**
+
+### What to look for
+
+During Phase B (component analysis) and Phase C (plan creation), you may have discovered things that contradict or are missing from existing documentation:
+
+- **Component analysis revealed hidden behaviors** not documented in `.analysis.md` → those should already be captured by `/analyze`. But if you noticed something the analyzer missed (e.g., a cross-component interaction only visible when planning the feature), that's a finding.
+- **Requirements contradicted existing architecture** → the plan adapted, but the architectural assumption that led to the contradiction might affect future plans too.
+- **Project overview was inaccurate** → a module described as "handles X" actually also handles Y, or the data flow diagram is wrong.
+- **An assumption about a component turned out wrong during clarification** → the user corrected something that the code alone couldn't reveal (business logic, external constraints).
+
+### What to do
+
+Only for **non-trivial findings** that could cause problems in future plans or execution:
+
+1. Present each finding to the user:
+   - "During planning, I discovered: {finding}"
+   - "This should be documented in: {target document}"
+   - "Proposed update: {specific content to add/change}"
+2. If user agrees: apply the update to the appropriate document:
+   - Component-specific → update `.analysis.md` Hidden Details table
+   - Pattern-level → create/update rule in `.workflow/rules/planning/` or `code/`
+   - Architecture-level → update `.workflow/project-overview.md`
+3. If user disagrees or finding is trivial: skip it.
+
+**Skip criteria:** Don't surface findings that are:
+- Already captured by the analysis docs (redundant)
+- Trivial or obvious from the code
+- Specific to this one plan with no future relevance
+
+## Phase G: Template Suggestion
+
+After reflection, assess whether this plan represents a **repeatable pattern**:
+- Does this plan create something that will likely be built again with variations? (new provider integration, new CRUD page, new API resource, new module following an existing pattern)
+- Are there already similar components in the codebase that followed the same shape?
+
+If yes, suggest to the user: "This plan looks like a repeatable pattern ({reason}). Want to create a template so future instances are faster? I can do it now while the full context is fresh."
+
+If user agrees: use the Skill tool to invoke `/template-create` with `--from-session` flag. This signals template-create to pull rich context from the current session rather than reconstructing from files.
+
+When invoking, pass to the template-extractor agent:
+1. **Plan summary** — what was built and why
+2. **Component intelligence** — key findings from analysis that shaped the plan
+3. **Phase/task structure** — how the work was decomposed (often maps directly to template steps)
+4. **Affected components** — what was touched and their `.analysis.md` docs
+5. **Reflection findings** — discoveries and corrections from Phase F
+6. **Key decisions and reasoning** — trade-offs made during planning and why
+
+This is the richest context possible for template creation — reasoning and intent that don't survive in plan.json alone.
+
+If user declines: fine. They can run `/template-create` later (less rich context, but functional).
+
 ## Constraints
 - Do NOT include implementation code in the plan — tasks describe WHAT, executor decides HOW
 - Do NOT create more than 5 phases unless the feature genuinely requires it
