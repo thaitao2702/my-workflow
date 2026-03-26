@@ -8,32 +8,49 @@ You are executing an approved plan phase-by-phase. Track state, enforce TDD, run
 
 **CLI shorthand:** `python .claude/scripts/workflow_cli.py` (all state/plan/phase reads and writes go through this CLI)
 
+**CRITICAL: Every CLI command MUST include `--plan-dir $PLAN_DIR`.** Without it, the CLI auto-resolves to the latest plan alphabetically, which silently targets the wrong plan when multiple plans exist.
+
 **Input:** `/execute` (uses latest approved plan), `/execute {plan-path}`, or `/execute --resume`
 **Output:** Implemented code, updated state, reviewed and documented
 
 ## Step 1: Load Plan
 
-1. If `--resume`: find the active plan:
-   ```
-   python .claude/scripts/workflow_cli.py find-active
-   ```
-2. If path provided: use that plan directory
-3. If no argument: find the most recent approved plan (CLI auto-resolves)
-4. Read plan summary and determine next group:
-   ```
-   python .claude/scripts/workflow_cli.py plan get
-   python .claude/scripts/workflow_cli.py plan phases
-   ```
-5. Read project overview: `.workflow/project-overview.md`
-6. If NOT resuming — record execution start and begin:
-   ```
-   python .claude/scripts/workflow_cli.py state start-execution $(git rev-parse HEAD)
-   ```
-7. If resuming — get the resume point:
-   ```
-   python .claude/scripts/workflow_cli.py state current
-   ```
-   This returns the current phase, task, and any substep progress. Continue from there.
+### Step 1a: Resolve PLAN_DIR
+
+Determine `$PLAN_DIR` from the user's input. **This must happen first — all subsequent CLI calls use it.**
+
+| Argument | Action |
+|----------|--------|
+| `--resume` | Run `python .claude/scripts/workflow_cli.py find-active` → use the output path as `$PLAN_DIR` |
+| Path ending in `.json` (e.g., `plans/260325-foo/plan.json`) | Strip the filename: use the parent directory as `$PLAN_DIR` |
+| Path to a directory | Use as-is as `$PLAN_DIR` |
+| No argument | Let CLI auto-resolve: run `python .claude/scripts/workflow_cli.py plan get --plan-dir` without a value will error — instead, list available plans and ask user to confirm which one |
+
+After resolving, **confirm to the user:** "Using plan directory: `$PLAN_DIR`"
+
+### Step 1b: Read Plan
+
+```
+python .claude/scripts/workflow_cli.py plan get --plan-dir $PLAN_DIR
+python .claude/scripts/workflow_cli.py plan phases --plan-dir $PLAN_DIR
+```
+
+Determine which group to execute next (from the phases list + state).
+
+Read project overview: `.workflow/project-overview.md`
+
+### Step 1c: Start or Resume
+
+If NOT resuming — record execution start:
+```
+python .claude/scripts/workflow_cli.py state start-execution $(git rev-parse HEAD) --plan-dir $PLAN_DIR
+```
+
+If resuming — get the resume point:
+```
+python .claude/scripts/workflow_cli.py state current --plan-dir $PLAN_DIR
+```
+This returns the current phase, task, and any substep progress. Continue from there.
 
 ## Step 2: Execute Groups
 
@@ -45,11 +62,11 @@ Process groups sequentially (A → B → C). Within each group, phases can run i
 
 1. Mark phase as in progress:
    ```
-   python .claude/scripts/workflow_cli.py state start-phase {N}
+   python .claude/scripts/workflow_cli.py state start-phase {N} --plan-dir $PLAN_DIR
    ```
 2. Read phase tasks:
    ```
-   python .claude/scripts/workflow_cli.py phase tasks {N}
+   python .claude/scripts/workflow_cli.py phase tasks {N} --plan-dir $PLAN_DIR
    ```
 3. Load relevant `.analysis.md` files (Level 1: frontmatter + CONTENT)
    - These should exist from planning. If missing → use the Skill tool to invoke `/analyze` as fallback
@@ -61,11 +78,11 @@ For each task in the phase:
 
 1. Mark task as active:
    ```
-   python .claude/scripts/workflow_cli.py state set-active {N} {task-id}
+   python .claude/scripts/workflow_cli.py state set-active {N} {task-id} --plan-dir $PLAN_DIR
    ```
 2. Read task details:
    ```
-   python .claude/scripts/workflow_cli.py phase task {N} {task-id}
+   python .claude/scripts/workflow_cli.py phase task {N} {task-id} --plan-dir $PLAN_DIR
    ```
 3. Spawn a subagent with `.claude/agents/executor.md`. Provide:
    - **Task description + acceptance criteria** from the phase task data
@@ -76,13 +93,13 @@ For each task in the phase:
 
 4. Track substep progress as the executor works:
    ```
-   python .claude/scripts/workflow_cli.py state substep {N} {task-id} "Test written" done
-   python .claude/scripts/workflow_cli.py state substep {N} {task-id} "Implementation" next
+   python .claude/scripts/workflow_cli.py state substep {N} {task-id} "Test written" done --plan-dir $PLAN_DIR
+   python .claude/scripts/workflow_cli.py state substep {N} {task-id} "Implementation" next --plan-dir $PLAN_DIR
    ```
 
 5. When task completes:
    ```
-   python .claude/scripts/workflow_cli.py state complete-task {N} {task-id}
+   python .claude/scripts/workflow_cli.py state complete-task {N} {task-id} --plan-dir $PLAN_DIR
    ```
 
 #### Step 2c: Phase Review
@@ -117,7 +134,7 @@ Only if the phase has `affected_components` that include UI components AND `.wor
 
 1. Mark phase completed:
    ```
-   python .claude/scripts/workflow_cli.py state complete-phase {N}
+   python .claude/scripts/workflow_cli.py state complete-phase {N} --plan-dir $PLAN_DIR
    ```
 2. Run regression: tests from all prior completed phases still pass
 3. Proceed to next group
@@ -132,7 +149,7 @@ After ALL phases complete, this is the **single point** where documentation gets
 
 1. Get the execution start commit:
    ```
-   python .claude/scripts/workflow_cli.py state get execution_start_commit
+   python .claude/scripts/workflow_cli.py state get execution_start_commit --plan-dir $PLAN_DIR
    ```
 2. Get the full diff since execution started: `git diff {start_commit}..HEAD --name-only`
 3. From the changed files, identify which components were affected
@@ -145,7 +162,10 @@ For each affected component, use the Skill tool to invoke `/doc-update`.
 Provide:
 - The component path
 - The full git diff: `git diff {start_commit}..HEAD -- {component_files}`
-- Plan context: run `python .claude/scripts/workflow_cli.py plan get summary` for the plan intent
+- Plan context:
+  ```
+  python .claude/scripts/workflow_cli.py plan get summary --plan-dir $PLAN_DIR
+  ```
 
 ### Step 3c: Verify Project Overview
 
@@ -214,11 +234,11 @@ If user declines: fine. They can run `/template-create` later.
 1. Run full test suite
 2. Mark execution complete:
    ```
-   python .claude/scripts/workflow_cli.py state complete
+   python .claude/scripts/workflow_cli.py state complete --plan-dir $PLAN_DIR
    ```
 3. Display final progress:
    ```
-   python .claude/scripts/workflow_cli.py state show
+   python .claude/scripts/workflow_cli.py state show --plan-dir $PLAN_DIR
    ```
 4. Present execution summary to user
 
@@ -230,9 +250,10 @@ When resuming an interrupted session:
    ```
    python .claude/scripts/workflow_cli.py find-active
    ```
+   Use the output as `$PLAN_DIR`.
 2. Get resume point:
    ```
-   python .claude/scripts/workflow_cli.py state current
+   python .claude/scripts/workflow_cli.py state current --plan-dir $PLAN_DIR
    ```
    Returns: `{"current_phase": 2, "current_task": "task-03", "substeps": [...]}`
 3. Determine resume point from the response:
@@ -246,7 +267,7 @@ When resuming an interrupted session:
 
 When a group has multiple phases:
 - Launch each phase as a separate Agent (background if possible)
-- Each agent uses CLI to update its own phase's state (no file contention — CLI does atomic writes)
+- Each agent uses CLI with `--plan-dir $PLAN_DIR` to update its own phase's state
 - Wait for all phases in the group to complete
 - Run regression tests after the entire group finishes
 - Documentation updates happen in Step 3, NOT here
@@ -256,25 +277,28 @@ When a group has multiple phases:
 ### Task Failure (tests won't pass, implementation blocked)
 1. Mark task as failed:
    ```
-   python .claude/scripts/workflow_cli.py state fail-task {N} {task-id} "reason"
+   python .claude/scripts/workflow_cli.py state fail-task {N} {task-id} "reason" --plan-dir $PLAN_DIR
    ```
 2. Log the error:
    ```
-   python .claude/scripts/workflow_cli.py state log "Task {task-id} failed: reason"
+   python .claude/scripts/workflow_cli.py state log "Task {task-id} failed: reason" --plan-dir $PLAN_DIR
    ```
 3. Ask user: **retry**, **skip**, or **abort**
 4. If retry: attempt again with different approach (max 2 retries)
 5. If skip:
    ```
-   python .claude/scripts/workflow_cli.py state skip-task {N} {task-id} "reason"
+   python .claude/scripts/workflow_cli.py state skip-task {N} {task-id} "reason" --plan-dir $PLAN_DIR
    ```
 6. If abort:
    ```
-   python .claude/scripts/workflow_cli.py state pause
+   python .claude/scripts/workflow_cli.py state pause --plan-dir $PLAN_DIR
    ```
 
 ### Agent Crash (subagent fails to return)
-1. Log the failure via CLI
+1. Log the failure:
+   ```
+   python .claude/scripts/workflow_cli.py state log "Agent crash during {task-id}" --plan-dir $PLAN_DIR
+   ```
 2. Check: did the agent produce any partial output?
 3. Retry with fresh agent spawn (max 1 retry)
 4. If still failing: escalate to user
@@ -295,6 +319,7 @@ When a group has multiple phases:
 - Do NOT proceed past a FAILED review without fixing issues or getting user approval
 - Do NOT modify files outside the plan's scope (no scope creep)
 - Do NOT read or edit state.json directly — always use the CLI
+- Do NOT run any CLI command without `--plan-dir $PLAN_DIR`
 - Do NOT update documentation per-phase — all doc updates happen in Step 3
 - Do NOT skip the final reconciliation step
 - Max 2 fix rounds per review failure — escalate to user after that
