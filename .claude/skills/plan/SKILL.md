@@ -113,22 +113,101 @@ For EVERY affected component (modified, extended, consumed, created):
 
 Do NOT proceed to Step 5 until all checks pass.
 
-## Phase C: Plan Creation
+## Phase C: Plan Creation (Main Agent)
 
-### Step 5: Spawn Planner Agent
+You design the plan directly — no subagent delegation. All context from Phases A-B is already in your session. Use the planning principles below and the format specs to design a quality plan.
 
-Use the Agent tool to spawn a subagent with `.claude/agents/planner.md`.
+### Planning Principles
 
-Provide the agent with:
-1. **Finalized requirements** (from Step 1-3)
-2. **Project overview** — `.workflow/project-overview.md`
-3. **Component analysis docs** — read the `.analysis.md` files **fresh from disk** (Level 1: frontmatter + CONTENT section). Verified in Step 4b.
-4. **Source code of key files** — for Modified/Extended components, include the actual source files. The `.analysis.md` gives the planner the component's API and hidden details, but source code lets the planner judge implementation feasibility (e.g., "can this function be extended to also handle X?").
-5. **Template context** (if `/template-apply` was used in Step 2)
-6. **Config** — `.workflow/config.json`
-7. **The plan and phase JSON formats below** — including field definitions
+These principles govern plan design during Steps 5-7.
 
-The planner agent returns: structured plan data + phase data.
+#### Task Granularity — The Coherent Unit
+Each phase spawns one executor subagent that implements all tasks sequentially, tracking each task's completion for resume. This means:
+
+- **Upper bound:** All tasks in a phase must fit in one agent session. If the phase is too large, split into more phases — not more granular tasks.
+- **Lower bound:** A task must be a meaningful unit of progress worth tracking independently. A 2-line change doesn't need its own task. Merge trivially small changes (one import, one hook call, one type declaration) with related tasks.
+- **Cohesion:** Tightly coupled changes belong in ONE task. If change A only makes sense because of change B, they're one task:
+  - Type declaration + the class that uses it → one task
+  - Public accessor + the code that calls it → one task
+  - Two 1-line hooks in different files for the same concern → one task
+- **The test:** Would a developer naturally do these changes in one sitting, one commit? If yes → one task.
+
+**Bad granularity (9 tasks):**
+- task-01: Create base class (1 file)
+- task-02: Create type declaration (3 lines) ← too small, coupled with task-01
+- task-05: Add accessor to CellView (2 lines)
+- task-06: Use accessor in HoldSpinView (2 lines) ← coupled with task-05
+
+**Good granularity (5 tasks, same work):**
+- task-01: Create base class + type declaration (cohesive: type references the class)
+- task-02: Implement bridge + activator (cohesive: activator instantiates bridge)
+- task-03: CellView accessor + HoldSpinView wiring (cohesive: accessor exists for the wiring)
+
+#### Task Descriptions — WHAT and WHY, Never HOW
+Tasks describe **WHAT to build and WHY** — constraints, boundaries, purpose. The executor decides HOW by reading source code and analysis docs.
+
+- **Good:** "Create abstract base class for test bridges. Must be pure TypeScript with zero engine imports. Methods: register, waitForState (polling-based), getSnapshot. See component analysis for existing patterns."
+- **Bad:** "Create TestBridgeBase.ts. Method waitForState: polls getAppState() every 200ms using setInterval, resolves when state matches, rejects after timeout."
+
+The bad example leaks implementation (polling interval, exact property paths) into the plan. The executor discovers these by reading source code — pre-deciding means the planner guesses and the executor follows blindly.
+
+#### Plan Summary as Mission Briefing
+The `summary` field is the executor's primary orientation document. Every executor reads it before starting any task. It must answer: What are we building? Why? What are the key constraints and architectural decisions? What should the executor know that ISN'T in individual task descriptions?
+
+Test: "If a new developer reads the summary + a task description, can they implement correctly?"
+
+#### Acceptance Criteria
+Every criterion must be **verifiable by running something** — a test, a command, a query. "Works correctly" is NOT verifiable. "GET /api/reports returns 200 with JSON array matching ReportSchema" IS. If you can't write a verifiable criterion, the task isn't well-defined enough.
+
+#### Using Component Intelligence
+Hidden details in analysis docs often reveal constraints that change the plan. If a component silently clamps date ranges to 90 days, your "export all data" feature needs pagination. Reference specific findings in `component_intelligence` so reviewers understand why you made certain choices.
+
+#### Parallel Safety
+Assign parallel groups (A, B, C...) to phases that can run simultaneously. **The #1 rule:** phases in the same group must NOT modify the same files — this prevents merge conflicts. When in doubt, put phases in separate groups. Sequential is safe; parallel is fast but risky.
+
+### Step 5: Design Plan Direction
+
+Design the plan using:
+- Gathered context (requirements, clarification answers — already in your session)
+- Component analysis (`.analysis.md` artifacts verified in Step 4b)
+- Project overview (`.workflow/project-overview.md`)
+- Planning principles above
+- JSON format specs defined in Step 7 (plan.json and phase-{N}.json structures)
+
+Produce a **brief direction summary** (10-15 lines):
+- Plan name and scope
+- Number of phases and total tasks
+- Phase overview with dependency groups and key dependencies
+- Key architectural decisions that shaped the plan
+- Top risks
+
+Do NOT produce full JSON at this point — just the direction for user validation.
+
+### Step 6: User Direction Checkpoint
+
+The user understands the requirements better than any agent — catching directional mistakes here is cheap; running a 10-dimension review on a plan the user would reject is waste.
+
+1. Present the direction summary to the user
+2. Ask: "Does this direction look right? Approve to proceed, or tell me what to change."
+3. If user wants changes:
+   - Incorporate the feedback — adjust phases, scope, dependencies, or architecture as needed
+   - Produce an updated direction summary (same format as Step 5 output)
+   - Present it to the user and ask again
+   - Repeat until user approves direction
+4. If user approves: proceed to Step 7
+
+### Step 7: Write Plan Files
+
+Direction approved — now materialize the full plan to disk.
+
+1. Create directory: `.workflow/plans/{YYMMDD}-{slug}/`
+   - `{YYMMDD}` = today's date (e.g., `260328`)
+   - `{slug}` = kebab-case from plan name
+   - **Store as `$PLAN_DIR`** — all subsequent CLI calls use `--plan-dir $PLAN_DIR`
+
+2. Write `plan.json` with `"status": "draft"` following the plan file format below
+3. Write `phase-{N}.json` for each phase following the phase file format below
+4. Use the CLI to read back the plan and verify files written correctly
 
 ### Plan File Format: `plan.json`
 
@@ -139,7 +218,7 @@ The planner agent returns: structured plan data + phase data.
   "status": "draft",
   "total_phases": 3,
   "total_tasks": 12,
-  "summary": "What we're building and why — 2-3 sentences",
+  "summary": "Mission briefing — see field definition below",
   "scope": {
     "in_scope": ["requirement 1", "requirement 2"],
     "out_of_scope": ["explicitly excluded item"]
@@ -160,13 +239,19 @@ The planner agent returns: structured plan data + phase data.
 **Field definitions:**
 - `name`: kebab-case feature identifier, used for directory naming
 - `status`: `draft` → `reviewed` → `approved` → `executing` → `completed`
-- `summary`: concise description of what and why — used as context for all downstream agents
+- `summary`: **Mission briefing for the executor.** This is the primary guidance document — an executor agent reading ONLY this summary + a task description should understand enough to implement correctly. Include:
+  - What we're building and why (the goal, not just the feature name)
+  - Key architectural decisions and constraints ("polling only, no events", "activated by URL param only", "reads internal state but never modifies game logic")
+  - Important context that affects HOW tasks should be implemented ("bridge must have zero cost when not activated", "all state reads go through GlobalContext singletons")
+  - Relationships to other systems if relevant ("QA platform depends on bridge-api.md output")
+  - NOT implementation details (no property paths, no method signatures — those belong in analysis docs and source code)
+  - Target: ~200-400 tokens. Rich enough to guide, concise enough to include in every executor prompt.
 - `scope.in_scope` / `out_of_scope`: explicit boundaries to prevent scope creep during execution
-- `component_intelligence`: key findings from pre-planning analysis that explain WHY the plan makes certain choices (e.g., "date range clamped to 90 days server-side, so export needs pagination")
+- `component_intelligence`: key findings from pre-planning analysis that explain WHY the plan makes certain choices. These are facts discovered during component analysis that the executor needs to know — edge cases, hidden constraints, non-obvious behaviors. (e.g., "AutoPopup.onConfirmClicked() is private — use onConfirm callback instead", "numberAutoSpin uses -1 as disabled sentinel, Infinity as unlimited")
 - `phases[].dependencies`: array of phase numbers that must complete BEFORE this phase starts. Drives execution ordering.
 - `phases[].group`: parallel execution group letter (A, B, C...). **Phases in the same group run simultaneously.** This means they MUST NOT modify the same files — file conflicts in parallel execution cause merge failures. Group A runs first, then all of group B in parallel, then group C, etc.
 - `dependency_graph_mermaid`: Mermaid diagram string showing phase dependencies visually
-- `risks`: informed by component analysis hidden details — what could go wrong, how to mitigate
+- `risks`: informed by component analysis hidden details — what could go wrong, how to mitigate. Each risk should have a concrete mitigation the executor can follow.
 
 ### Phase File Format: `phase-{N}.json`
 
@@ -178,7 +263,7 @@ The planner agent returns: structured plan data + phase data.
   "group": "A",
   "depends_on": [],
   "affected_components": ["src/models/user.ts", "src/models/order.ts"],
-  "goal": "What this phase achieves — 1-2 sentences",
+  "goal": "Phase briefing — see field definition below",
   "tasks": [
     {
       "id": "task-01",
@@ -202,70 +287,54 @@ The planner agent returns: structured plan data + phase data.
 - `group`: same as in plan.json — parallel execution group. Must match.
 - `depends_on`: phase numbers that must complete first. Must match plan.json dependencies.
 - `affected_components`: file paths of components this phase touches — used by `/doc-update` during reconciliation
-- `goal`: what this phase achieves as a unit — should be independently testable
+- `goal`: **Phase briefing.** What this phase achieves and why it matters in the overall plan. An executor starting this phase should understand: what the phase produces, how it connects to other phases, what constraints apply. Include context that's specific to this phase but not repeated in every task. (e.g., "After this phase, the bridge contract is defined and any game can extend it. All files are pure TypeScript — zero engine imports.") Target: 2-4 sentences.
+- `tasks[]`: Each task is a **coherent unit of work** — meaningful enough to track independently (the executor marks each complete for resume), small enough that all tasks in the phase fit in one agent session. Tightly coupled changes (type + class, accessor + consumer, multiple hooks for the same concern) belong in ONE task. A 2-line change should NOT be its own task.
 - `tasks[].id`: unique within the phase, format `task-NN`
-- `tasks[].description`: what to do and why — the executor decides HOW to implement
+- `tasks[].description`: **WHAT to do and WHY.** The executor decides HOW to implement by reading source code and analysis docs. Description should include:
+  - What to create or modify
+  - Why this task exists (its purpose in the phase)
+  - Constraints and boundaries ("zero engine imports", "no-op when bridge inactive")
+  - Which components to reference for patterns
+  - Do NOT include: exact property paths, method signatures, implementation code, line numbers. Those belong in `.analysis.md` docs and source code — the executor reads them directly.
 - `tasks[].files`: files to create or modify — used for file scope safety checks (parallel phases can't touch same files)
 - `tasks[].acceptance_criteria`: **verifiable** conditions. Each must be testable by running something (a test, a command, a query). "Works correctly" is NOT verifiable. "Returns 200 with JSON matching schema" IS.
 - `tasks[].test_requirements`: specific tests to write — not "write tests" but "test that expired tokens return 401"
 
-## Phase D: Plan Review
+## Phase D: Quality Review
 
-### Step 6: Automated Review
+### Step 8: Automated Review
 
-Use the Agent tool to spawn a subagent with `.claude/agents/reviewer.md`.
+Read the prompt template: `.claude/skills/plan/plan-reviewer-prompt.md`
 
-Provide the agent with:
-1. **The plan** — pass the plan data and phase data directly from the planner agent's output (in-memory from Step 5). Do NOT read from disk — the files have not been written yet.
-2. **The 8 review dimensions** — include this list explicitly in the agent's prompt so it knows exactly what to check:
-   1. **Requirement coverage** — every requirement maps to at least one task
-   2. **Task atomicity** — each task is completable in one agent session
-   3. **Dependency correctness** — no circular deps, correct sequencing
-   4. **File scope safety** — tasks don't modify same files in phases within the same parallel group
-   5. **Acceptance criteria completeness** — every task has verifiable criteria (not vague)
-   6. **Test coverage mapping** — every behavior has a corresponding test requirement
-   7. **Consistency** — no conflicting instructions across phases
-   8. **Codebase alignment** — plan respects existing patterns from project overview + component docs
-3. **Planning rules** — read all files in `.workflow/rules/planning/` (if any exist)
-4. **Component docs** — the `.analysis.md` files used during planning
-5. **Source code of relevant files** — for codebase alignment checks (dimension 8), the reviewer may need to compare plan instructions against actual code patterns
-6. **Project overview** — `.workflow/project-overview.md`
+1. Collect each data item listed in **For Orchestrator** from its specified source
+2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions and review dimensions
+3. Spawn a **reviewer subagent** (`.claude/agents/reviewer.md`), passing the filled **For Subagent** section as the prompt — one-shot, evaluates against 10 dimensions, returns findings
 
-If review has FAILs: return findings to the planner agent for revision (max 2 revision rounds).
+If review has FAILs:
+- Revise the plan files on disk yourself (you have full context from plan design)
+- Re-spawn the reviewer (max 2 revision rounds)
+- If still failing after 2 rounds: present findings to user, ask how to proceed
 
-### Step 7: User Review
+## Phase E: Final Review & Finalization
 
-Present the final plan to the user:
-1. Display the plan summary, phase overview, dependency graph, and risk assessment directly from the in-memory plan data (files not written yet).
+### Step 9: Final User Review
+
+Present the plan to the user after automated review passes:
+
+1. Use the CLI to display the plan summary. Show specific phase details if the user wants depth.
 2. User can: **approve**, **request changes**, or **reject**
-3. If changes requested: update plan, re-run automated review (Step 6)
-4. If approved: proceed to Phase E
+3. If changes requested: revise files on disk, re-run automated review (Step 8)
+4. If rejected: inform user plan remains as draft in `$PLAN_DIR`
+5. If approved: proceed to Step 10
 
-## Phase E: Plan Finalization
+### Step 10: Finalize Plan
 
-### Step 8: Write Plan Files
+**If creating multiple plans in one session:** Complete Step 10 fully for each plan before starting the next. Each plan gets its own `$PLAN_DIR`. Do NOT interleave.
 
-**If creating multiple plans in one session:** Complete Step 8 fully for each plan before starting Step 8 for the next. Each plan gets its own `$PLAN_DIR`. Do NOT interleave — finish writing + init for plan A, then start plan B.
-
-For each plan:
-
-1. Create directory: `.workflow/plans/{YYMMDD}-{slug}/`
-   - `{YYMMDD}` = today's date (e.g., `260326`)
-   - `{slug}` = kebab-case from plan name (e.g., `user-export`)
-   - **Store this as `$PLAN_DIR`** — all subsequent CLI calls for THIS plan use `--plan-dir $PLAN_DIR`
-2. Write `plan.json` with status updated to `"approved"`
-3. Write `phase-{N}.json` for each phase
-4. **MANDATORY:** Initialize state via CLI (do NOT write state.json manually):
-   ```
-   python .claude/scripts/workflow_cli.py init $PLAN_DIR
-   ```
-   This creates `state.json` from `plan.json` + phase files with the correct list-of-objects format.
-
-5. Tell the user: "Plan created at `$PLAN_DIR`. Run `/execute` to start implementation."
-6. Display the initial state:
-   ```
-   python .claude/scripts/workflow_cli.py state show --plan-dir $PLAN_DIR
-   ```
+1. Use the CLI to set plan status to "approved"
+2. **MANDATORY:** Use the CLI to initialize state (creates `state.json` from plan + phase files). Do NOT write state.json manually.
+3. Tell the user: "Plan approved at `$PLAN_DIR`. Run `/execute` to start implementation."
+4. Use the CLI to display the initial execution state
 
 ## Phase F: Post-Planning Reflection
 
@@ -320,11 +389,14 @@ When invoking, pass to the template-extractor agent:
 If user declines: fine. They can run `/template-create` later.
 
 ## Constraints
+- Do NOT delegate plan creation to a subagent — design the plan directly in the main session (you have full context from Phases A-B)
 - Do NOT include implementation code in the plan — tasks describe WHAT, executor decides HOW
 - Do NOT create more than 5 phases unless the feature genuinely requires it
-- Do NOT create tasks that require more than one agent session to complete
+- Do NOT create phases with more tasks than an executor can complete in one agent session
 - Do NOT put tasks that modify the same files in the same parallel group
-- Do NOT skip the automated review step
+- Do NOT skip the user direction checkpoint (Step 6) — validate direction before writing files
+- Do NOT skip the automated review (Step 8) — the reviewer subagent catches structural issues
 - Do NOT proceed past user review without explicit approval
-- Do NOT write state.json manually — always use `workflow_cli.py init`
+- Do NOT write state.json manually — always use the CLI to initialize state
+- Do NOT update plan status manually — always use the CLI to set status
 - Do NOT run CLI commands without `--plan-dir $PLAN_DIR` (when plan files exist on disk)

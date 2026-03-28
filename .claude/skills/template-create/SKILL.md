@@ -75,12 +75,12 @@ Pass ALL of this to the template-extractor agent in Step 2. This produces the ri
 
 1. Look for plan directories in `.workflow/plans/` with `status: completed` in `state.json`
 2. If found, present: "I see you completed **{plan-name}**. Create the template from this execution?"
-3. If yes — load from disk:
-   - **Plan intent:** run `python .claude/scripts/workflow_cli.py plan get summary`
+3. If yes — load from disk using the CLI (see `.claude/scripts/workflow_cli.reference.md`):
+   - **Plan intent:** read the plan summary
    - **What changed:** `git diff {execution_start_commit}..HEAD`
-   - **Affected components:** via `python .claude/scripts/workflow_cli.py plan get`
+   - **Affected components:** read the full plan
    - **Component knowledge:** read `.analysis.md` files for all affected components
-   - **Task structure:** run `python .claude/scripts/workflow_cli.py phase tasks {N}` for each phase
+   - **Task structure:** read tasks for each phase
 
 Less rich than session context (no reasoning/discoveries), but still strong source material.
 
@@ -107,13 +107,11 @@ Any combination of the above + verbal description from the user.
 
 ## Step 2: Pattern Extraction
 
-Spawn a subagent with `.claude/agents/template-extractor.md`.
+Read the prompt template: `.claude/skills/template-create/template-extractor-prompt.md`
 
-Provide:
-1. **All source material** (files, diffs, analysis docs)
-2. **Template name** from user input
-3. **Project overview** — `.workflow/project-overview.md`
-4. **Session context** (if Option A-session): reasoning, decisions, discoveries, trade-offs from the plan/execute session. This is the context that doesn't survive in files — pass it explicitly.
+1. Collect each data item listed in **For Orchestrator** from its specified source (data varies by mode — collect what applies to the mode determined in Step 1)
+2. Fill `{placeholders}` in **For Subagent** with collected data, include only sections that have data, keep purpose descriptions
+3. Spawn a **template-extractor subagent** (`.claude/agents/template-extractor.md`), passing the filled **For Subagent** section as the prompt
 
 The agent analyzes the source and identifies:
 - **The repeatable pattern** — the "shape" of the work

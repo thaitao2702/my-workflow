@@ -44,7 +44,7 @@ Ask the user: **"Generate a plan for `/plan`, or execute directly?"**
    - `[G]` steps → tasks with user-provided details + reference to original
 2. Include reference files as context for the planner
 3. Return the plan skeleton to the calling context:
-   - If invoked by `/plan`: return as template context for the planner agent
+   - If invoked by `/plan`: return as template context for plan creation
    - If invoked directly: use the Skill tool to invoke `/plan` with the generated context
 
 ### Option B: Execute Directly (only if ALL sections are `[F]` or `[P]`)

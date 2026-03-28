@@ -5,6 +5,7 @@ Usage:
   workflow-cli plan show [--plan-dir DIR]
   workflow-cli plan get [FIELD] [--plan-dir DIR]
   workflow-cli plan phases [--plan-dir DIR]
+  workflow-cli plan set-status STATUS [--plan-dir DIR]
 
   workflow-cli phase show N [--plan-dir DIR]
   workflow-cli phase tasks N [--plan-dir DIR]
@@ -81,12 +82,32 @@ def find_latest_plan() -> Path | None:
 
 
 def resolve_plan_dir(explicit: str | None = None) -> Path:
-    """Resolve plan directory: explicit > active > latest."""
+    """Resolve plan directory: explicit > active > latest.
+
+    Accepts:
+      - Absolute path: used as-is
+      - Relative path with .workflow/plans/: resolved from project root
+      - Short name (e.g., '260326-game-bridge'): looked up in .workflow/plans/
+    """
     if explicit:
         p = Path(explicit)
         if p.is_absolute():
             return p
-        return find_project_root() / explicit
+
+        root = find_project_root()
+
+        # If it's already a relative path that exists from root, use it
+        candidate = root / explicit
+        if candidate.is_dir() and (candidate / "plan.json").exists():
+            return candidate
+
+        # Try as a short name inside .workflow/plans/
+        candidate_in_plans = root / WORKFLOW_DIR / explicit
+        if candidate_in_plans.is_dir() and (candidate_in_plans / "plan.json").exists():
+            return candidate_in_plans
+
+        # Fall back to relative from root (original behavior — will error with clear message)
+        return candidate
 
     active = find_active_plan()
     if active:
@@ -151,6 +172,18 @@ def cmd_plan_show(plan_dir: Path):
         for p in plan["phases"]:
             deps = ", ".join(str(d) for d in p.get("dependencies", [])) or "none"
             print(f"{p['phase']:<4} {p['name']:<30} {p.get('tasks', '?'):<7} {deps:<15} {p.get('group', '?')}")
+
+
+def cmd_plan_set_status(plan_dir: Path, status: str):
+    """Update plan status."""
+    valid = ("draft", "reviewed", "approved", "executing", "completed")
+    if status not in valid:
+        print(f"Error: status must be one of {valid}", file=sys.stderr)
+        sys.exit(1)
+    plan = read_json(plan_dir / "plan.json")
+    plan["status"] = status
+    write_json(plan_dir / "plan.json", plan)
+    print(json.dumps({"status": status}))
 
 
 def cmd_plan_phases(plan_dir: Path):
@@ -552,6 +585,8 @@ def main():
             cmd_plan_get(plan_dir, args[2] if len(args) > 2 else None)
         elif sub == "phases":
             cmd_plan_phases(plan_dir)
+        elif sub == "set-status" and len(args) > 2:
+            cmd_plan_set_status(plan_dir, args[2])
         else:
             print(f"Unknown plan command: {sub}", file=sys.stderr)
             sys.exit(1)

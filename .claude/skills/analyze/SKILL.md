@@ -63,30 +63,11 @@ Only runs when `--recursive` flag is present.
 
 ## Step 3: Spawn Analyzer Agent
 
-Use the Agent tool to spawn `.claude/agents/analyzer.md`.
+Read the prompt template: `.claude/skills/analyze/analyzer-prompt.md`
 
-### For Full Mode
-
-Provide in the agent prompt:
-- Mode: `full`
-- Component source code (all files in the module, or the single entry file)
-- Test files for this component (if they exist)
-- Dependency `.analysis.md` files (frontmatter + CONTENT section only) — **read these fresh from disk**, they were just written/confirmed current in Step 2
-- Project overview: `.workflow/project-overview.md`
-- Output path: the co-located `.analysis.md` path determined in Step 0
-- The **output format** below
-
-### For Update Mode
-
-Provide in the agent prompt:
-- Mode: `update`
-- The existing `.analysis.md` file (full content)
-- Git diff: `git diff {last_commit}..HEAD -- {entry_files}`
-- Current source code (all entry files)
-- Dependency `.analysis.md` files (frontmatter + CONTENT section only) — **read fresh from disk**
-- Project overview: `.workflow/project-overview.md`
-- Output path: same file location (overwrite)
-- The **output format** below
+1. Collect each data item listed in **For Orchestrator** from its specified source (use the Full Mode or Update Mode table based on Step 1 result)
+2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions. Omit sections marked *(update mode only)* when in full mode. The output format is already embedded in the template — no need to gather it separately.
+3. Spawn an **analyzer subagent** (`.claude/agents/analyzer.md`), passing the filled **For Subagent** section as the prompt
 
 ## Step 4: Verify Output
 
@@ -107,72 +88,7 @@ If invoked by another skill (`/plan`, `/execute`): return silently.
 
 ## Output Format
 
-Pass this format to the analyzer agent. The agent writes the file.
-
-```markdown
----
-name: {ComponentName}
-type: {react-component | service | api-route | hook | utility | module | middleware | model}
-summary: "{One-paragraph summary — what it is, what it does, key features}"
-last_analyzed: {YYYY-MM-DD}
-last_commit: {git-hash}
-analysis_version: v1
-dependencies: [{local dependency names}]
-entry_files: [{relative paths to source files}]
----
-
-<!-- PART:CONTENT_START -->
-
-## Purpose & Use Cases
-{Complete description — all major features, usage scenarios, why it exists}
-
-## Dependencies
-| Dependency | Type | Purpose | Key Interface |
-|-----------|------|---------|--------------|
-
-## Public API / Props
-| Name | Type | Required | Default | Description |
-|------|------|----------|---------|-------------|
-
-## Integration Patterns
-{Real code examples showing how to USE this component — 2-3 scenarios}
-
-## Architecture Diagram
-```mermaid
-graph TD
-    ...
-```
-
-## Data Flow
-```mermaid
-graph LR
-    ...
-```
-
-## Entrypoints & Files
-| File | Role |
-|------|------|
-
-## Patterns Used
-{Named patterns with brief explanations}
-
-## Hidden Details & Non-obvious Behaviors
-| What | Why | Risk | Test Suggestion |
-|------|-----|------|----------------|
-
-<!-- PART:CONTENT_END -->
-
-<!-- PART:EXTRA_START -->
-
-## Tests
-| Test File | Coverage |
-|-----------|----------|
-
-## Performance Notes
-{Caching, rendering optimizations, known bottlenecks}
-
-<!-- PART:EXTRA_END -->
-```
+The full format spec is embedded in the analyzer prompt template (`.claude/skills/analyze/analyzer-prompt.md`). Below is reference info for consumers of analysis docs.
 
 ### Progressive Loading
 

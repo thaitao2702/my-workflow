@@ -24,13 +24,11 @@ In both cases, after `/analyze` completes, verify the `.analysis.md` was created
 
 ## Step 1: Assess Change Significance
 
-Use the Agent tool to spawn a subagent with `.claude/agents/doc-updater.md`.
+Read the prompt template: `.claude/skills/doc-update/doc-updater-prompt.md`
 
-Provide:
-1. **Git diff** for the component's files
-2. **Existing `.analysis.md`** file (full content)
-3. **Project overview** — `.workflow/project-overview.md`
-4. **Plan context** (if available) — what was being built and why. This helps the agent assess significance: "a field was added" is ambiguous, but "a field was added as part of the export feature" clarifies intent.
+1. Collect each data item listed in **For Orchestrator** from its specified source
+2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions
+3. Spawn a **doc-updater subagent** (`.claude/agents/doc-updater.md`), passing the filled **For Subagent** section as the prompt
 
 The agent classifies the changes:
 
