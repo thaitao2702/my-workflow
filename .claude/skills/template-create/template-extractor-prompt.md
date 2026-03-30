@@ -87,4 +87,4 @@ Apply multi-case reasoning (see your agent instructions) to extract the repeatab
 6. **Gotchas** — non-obvious things learned, noting which are pattern-level vs instance-specific
 7. **Reference file contents** — annotated snapshots of key source files with `[F]`/`[P]`/`[G]` markers
 
-Return the complete `template.md` content and reference file contents. The orchestrator will present your output to the user for review before writing to disk.
+Return the **complete** `template.md` content and reference file contents — full detail, not a summary. The orchestrator will present a condensed summary to the user first for direction validation, then show the full output for final review. All refinement after your output is handled by the orchestrator with the user.
