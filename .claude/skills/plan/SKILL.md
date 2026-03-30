@@ -43,7 +43,7 @@ Analyze requirements for gaps and ambiguities. **Think deeply before asking — 
 
 1. Read `.workflow/project-overview.md` for architectural context
 2. From requirements + project overview, identify **candidate affected areas** — which modules, domains, or features from the project overview are likely involved. You don't know specific files yet — use the modules/domains table and core flows from the overview to identify areas.
-3. For each candidate area, check if the specific component already has an `.analysis.md` file **in the same directory** as the component source file (e.g., `src/services/authService.ts` → check for `src/services/authService.analysis.md`). If it exists, read its frontmatter for additional context. Do NOT glob subdirectories — analysis docs are co-located with their source file, not nested.
+3. For each candidate area, check if an `.analysis.md` file exists **in the same directory** as the component source file (e.g., `src/services/authService.ts` → check for `src/services/authService.analysis.md`). If it exists, note it — you'll use it in Phase B. Do NOT read it yet, and do NOT glob subdirectories — analysis docs are co-located with their source file, not nested.
 
 4. **Self-check before generating questions.** Ask yourself:
    - Do I genuinely understand every requirement well enough to break it into concrete tasks?
@@ -66,52 +66,46 @@ If after self-check you have no real questions — requirements are clear and co
 
 ## Phase B: Component Intelligence Gathering
 
-### Step 4: Identify Affected Components
+### Step 4: Read Affected Components
 
-From requirements + project overview + clarification answers, identify specific components and classify their role:
+From requirements + project overview + clarification answers, identify specific components that this plan will touch.
 
-| Role | Meaning | Analysis Depth |
-|------|---------|---------------|
-| **Modified** | Changing its internals | **Deep** (recursive) — you're touching the wiring, need to understand dependencies |
-| **Extended** | Adding new features to it | **Deep** (recursive) — you're adding to the machine, need to understand the parts |
-| **Consumed** | Calling its API from new code | **Shallow** (single component) — you're a caller, just need the contract |
-| **Created** | New component, checking similar existing ones | **Shallow** (single component) — looking for a reference pattern |
+#### Step 4a: Identify Components
 
-**During this step:** You may browse the codebase to identify the right component paths (using Glob, Grep). But the purpose of this step is to identify WHICH components need analysis and ensure `.analysis.md` artifacts exist — not to deeply read source code yourself. The analysis agent does the deep reading.
+Browse the codebase (Glob, Grep) to find the specific files and modules involved. Classify each component's role in this plan:
 
-### Step 4a: Run Analysis for Each Component
+| Role | Meaning |
+|------|---------|
+| **Modified** | Changing its internals |
+| **Extended** | Adding new features to it |
+| **Consumed** | Calling its API from new code |
+| **Created** | New component, checking similar existing ones |
 
-For each affected component:
+#### Step 4b: Read Component Knowledge (analysis-first)
 
-1. Check if `{component}.analysis.md` exists alongside the source
-2. If exists: read **frontmatter only** (first ~10 lines), compare `last_commit` vs `git log -1 --format=%H -- {entry_files}`
-   - **Current** → analysis exists and is up to date. Skip.
-   - **Stale** → needs re-analysis. Proceed to invoke below.
-3. If doesn't exist → needs analysis. Proceed to invoke below.
+For each affected component, use the analysis doc as the primary source when it's verified fresh. This saves significant tokens compared to reading full source, and analysis docs contain accumulated experience (hidden behaviors, edge cases, failed assumptions) that source code alone doesn't capture.
 
-**Invoking analysis based on component role:**
+**For each component:**
 
-- **Modified / Extended** components (deep): use the Skill tool to invoke `/analyze {component-path} --recursive`
-  - Before invoking, check how many dependencies lack `.analysis.md`:
-    - **0-2 missing** → proceed with deep analysis automatically
-    - **3+ missing** → warn the user: "Component {name} has {N} unanalyzed dependencies. Deep analysis is recommended but will take time. Proceed with deep / shallow / skip?"
-  - User can override to shallow if they judge the dependencies are irrelevant to the planned changes
-- **Consumed / Created** components (shallow): use the Skill tool to invoke `/analyze {component-path}` (no --recursive flag)
+1. **Check if `.analysis.md` exists** alongside the source (noted in Phase A Step 3).
 
-**MANDATORY: You MUST invoke `/analyze` via the Skill tool for every component that has no up-to-date `.analysis.md`. Do NOT substitute direct file reads for this step.** The analysis produces a structured, persistent artifact that downstream steps depend on.
+2. **If `.analysis.md` exists — verify freshness:**
+   - Compute hash of the component's `entry_files`: `python .claude/scripts/workflow_cli.py hash {entry_files}`
+   - Compare with `source_hash` in the analysis frontmatter
+   - If `dependency_tree` exists in frontmatter, also hash those dependency files and compare
+   - **All hashes match (fresh):** read the `.analysis.md` as your primary source. It contains purpose, public API, hidden behaviors, edge cases, integration patterns, and accumulated experience from prior implementations. Judge whether this gives you enough to plan — if yes, skip source. If you need more detail (e.g., exact internal flow for a complex modification), read source selectively.
+   - **Any hash mismatch (stale):** skip the analysis doc — read source directly instead.
 
-### Step 4b: Verify Analysis Artifacts
+3. **If no `.analysis.md` exists:** read source directly.
 
-**After all analysis invocations complete, verify before proceeding:**
+4. **What to read from source** (when falling back):
+   - Modified/Extended components: read thoroughly — every function, not just exports
+   - Consumed components: focus on public API / exports
+   - Created components: read source of similar existing components for reference patterns
 
-For EVERY affected component (modified, extended, consumed, created):
-1. Check: does `{component}.analysis.md` exist on disk?
-2. Check: read frontmatter — is `last_commit` current vs `git log -1 --format=%H -- {entry_files}`?
-3. Check: are `name`, `type`, `summary`, `entry_files` populated?
+5. **Note what you learn.** Capture key findings that will shape the plan: constraints, hidden behaviors, integration points, existing patterns to follow. These populate `component_intelligence` in Step 7.
 
-**If ANY component fails this check → STOP. Invoke `/analyze` for the failing component. Re-run this check.**
-
-Do NOT proceed to Step 5 until all checks pass.
+**Do NOT invoke `/analyze` during planning.** If an analysis doc is stale or missing, read source directly. Analysis generation is expensive (subagent overhead) and best deferred to the execution analysis gate (Step 2a in `/execute`).
 
 ## Phase C: Plan Creation (Main Agent)
 
@@ -367,26 +361,6 @@ Only for **non-trivial findings** that could cause problems in future plans or e
 - Already captured by the analysis docs (redundant)
 - Trivial or obvious from the code
 - Specific to this one plan with no future relevance
-
-## Phase G: Template Suggestion
-
-After reflection, assess whether this plan represents a **repeatable pattern**:
-- Does this plan create something that will likely be built again with variations? (new provider integration, new CRUD page, new API resource, new module following an existing pattern)
-- Are there already similar components in the codebase that followed the same shape?
-
-If yes, suggest to the user: "This plan looks like a repeatable pattern ({reason}). Want to create a template so future instances are faster? I can do it now while the full context is fresh."
-
-If user agrees: use the Skill tool to invoke `/template-create` with `--from-session` flag.
-
-When invoking, pass to the template-extractor agent:
-1. **Plan summary** — what was built and why
-2. **Component intelligence** — key findings from analysis that shaped the plan
-3. **Phase/task structure** — how the work was decomposed
-4. **Affected components** — what was touched and their `.analysis.md` docs
-5. **Reflection findings** — discoveries and corrections from Phase F
-6. **Key decisions and reasoning** — trade-offs made during planning and why
-
-If user declines: fine. They can run `/template-create` later.
 
 ## Constraints
 - Do NOT delegate plan creation to a subagent — design the plan directly in the main session (you have full context from Phases A-B)

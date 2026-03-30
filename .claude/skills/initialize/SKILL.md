@@ -2,7 +2,7 @@
 description: "Initialize project overview — shallow, wide scan of the project for AI agent context"
 ---
 
-# /init — Initialize Project Overview
+# /initialize — Initialize Project Overview
 
 You are performing a project initialization scan. Your goal: produce a concise, high-level project overview so any AI agent can quickly understand this project's big picture. This is a **shallow, wide** scan — what the project IS and what it DOES, not how each piece works internally.
 

@@ -7,7 +7,7 @@ description: "Apply an integration template to accelerate a new implementation"
 Use an existing template to accelerate implementation of a new instance of a repeatable pattern.
 
 **Input:** `/template-apply {name}` or invoked by `/plan` when a template match is found
-**Output:** A plan skeleton or task list, ready for `/plan` or `/execute`
+**Output:** Structured template context that `/plan` consumes as enriched input
 
 ## Step 1: Load Template
 
@@ -32,34 +32,26 @@ For `[G]` guided sections:
 
 Collect all values before proceeding.
 
-## Step 3: Generate Output
+## Step 3: Generate Plan Input
 
-Ask the user: **"Generate a plan for `/plan`, or execute directly?"**
+Template-apply always produces structured input for `/plan`. Templates are patterns, not plans — they still need adaptation to the current codebase state and quality review before execution.
 
-### Option A: Generate Plan (recommended if any `[G]` sections exist)
-
-1. Transform template steps into plan phases/tasks:
-   - `[F]` steps → concrete tasks with exact instructions
-   - `[P]` steps → concrete tasks with variable values substituted
-   - `[G]` steps → tasks with user-provided details + reference to original
-2. Include reference files as context for the planner
-3. Return the plan skeleton to the calling context:
-   - If invoked by `/plan`: return as template context for plan creation
-   - If invoked directly: use the Skill tool to invoke `/plan` with the generated context
-
-### Option B: Execute Directly (only if ALL sections are `[F]` or `[P]`)
-
-1. Check: are there any `[G]` sections?
-   - **If yes:** warn the user: "This template has guided sections that need planning. Recommend going through `/plan` first."
-   - If user insists: proceed but flag `[G]` sections for human review during execution
-2. Generate `/execute`-compatible task list with:
-   - All variable values substituted
-   - Reference files as context
-   - Acceptance criteria derived from the template
-3. Hand off to `/execute`
+1. Transform template steps into a **template context document**:
+   - `[F]` fixed steps → concrete requirements with exact instructions
+   - `[P]` parametric steps → concrete requirements with variable values substituted
+   - `[G]` guided steps → requirements with user-provided details + reference to original implementation
+2. Include in the document:
+   - **Template name and source** — so the planner knows this is template-driven
+   - **Requirements list** — one requirement per template step, with variable values filled in
+   - **Reference files** — annotated code from `.workflow/templates/{name}/references/` that shows the pattern
+   - **Gotchas** — known edge cases and lessons learned from the template
+   - **Guided section answers** — user's answers for `[G]` sections (from Step 2)
+3. Hand off to `/plan`:
+   - If invoked by `/plan` (template discovery): return the template context document. The planner uses it as enriched input — it replaces the requirements gathering phase but the planner still does component intelligence, plan design, review, and approval.
+   - If invoked directly: use the Skill tool to invoke `/plan` with the template context document as the requirements input.
 
 ## Constraints
 - Do NOT skip variable collection — every variable must have a value before generating output
-- Do NOT auto-execute templates with `[G]` sections without warning
-- Do NOT ignore reference files — they contain the annotated patterns the executor needs
+- Do NOT bypass `/plan` — templates always go through planning for quality review and adaptation
+- Do NOT ignore reference files — they contain the annotated patterns the planner and executor need
 - Do NOT modify the template itself — it's a shared artifact

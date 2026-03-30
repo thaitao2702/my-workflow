@@ -59,11 +59,12 @@ After source is determined, if no name was provided yet: ask for the template na
 
 ### Option A-session: From current session (richest — invoked by `/plan` or `/execute`)
 
-The calling skill passes context directly. You already have in the main session:
+This skill runs in the main session, which already has rich context from the preceding `/plan` or `/execute`. Gather from your conversation history:
 - **Plan reasoning** — why decisions were made, trade-offs considered
 - **Component intelligence** — analysis findings that shaped the plan
 - **Execution discoveries** — wrong assumptions, hidden behaviors found during implementation
 - **Phase/task structure** — how the work was decomposed
+- **Key decisions** — trade-offs, adaptations, user corrections during planning or execution
 
 Additionally gather from disk:
 - **Git diff** — `git diff {execution_start_commit}..HEAD` for the concrete changes
@@ -105,7 +106,7 @@ Any combination of the above + verbal description from the user.
 - `.analysis.md` files for touched components (if they exist)
 - Project overview — `.workflow/project-overview.md`
 
-## Step 2: Pattern Extraction
+## Step 2: Pattern Extraction (subagent)
 
 Read the prompt template: `.claude/skills/template-create/template-extractor-prompt.md`
 
@@ -113,25 +114,15 @@ Read the prompt template: `.claude/skills/template-create/template-extractor-pro
 2. Fill `{placeholders}` in **For Subagent** with collected data, include only sections that have data, keep purpose descriptions
 3. Spawn a **template-extractor subagent** (`.claude/agents/template-extractor.md`), passing the filled **For Subagent** section as the prompt
 
-The agent analyzes the source and identifies:
-- **The repeatable pattern** — the "shape" of the work
-- **Steps** — ordered sequence of file operations
-- **Variability per step:**
-  - `[F]` Fixed — copy as-is every time
-  - `[P]` Parametric — same structure, swap values
-  - `[G]` Guided — follow the shape but expect structural differences
-- **Variables** — names/values that change each instance
-- **Integration points** — where new code connects to existing code
-- **Test patterns** — what tests follow the pattern
-- **Gotchas** — non-obvious things learned during the original work
+The agent uses multi-case reasoning to find the right abstraction level — imagines other scenarios that would use this pattern to determine what's truly fixed vs parametric vs guided. It produces the **complete** template in one shot:
+- `template.md` content (overview, steps with [F]/[P]/[G], variables, integration points, test patterns, gotchas)
+- Reference file contents (annotated with variability markers)
 
-The agent produces: `template.md` content + reference file contents.
+**The subagent is one-shot.** All subsequent refinement happens in the main session with the user.
 
-The agent uses multi-case reasoning internally to find the right abstraction level — it imagines other scenarios that would use this pattern to determine what's truly fixed vs parametric vs guided.
+## Step 3: Direction Review (user validates summary)
 
-## Step 3: Brief Review (user validates direction)
-
-Before generating the full template, present a **brief summary** for user validation. The user understands the context better than the agent — they must confirm the direction before the full design.
+Extract a **brief summary** from the subagent's output and present it to the user. The subagent produced the full template — this step validates direction before showing all the detail.
 
 Present:
 
@@ -155,18 +146,18 @@ Does this look right? Anything missing, wrong, or that should be split/merged?
 ```
 
 **Wait for user feedback.** The user may:
-- Confirm → proceed to Step 4 (full design)
+- Confirm → proceed to Step 4
 - Correct variability levels — "Step 3 should be [G] not [P], the UI varies a lot"
 - Add missing steps — "You missed that we also need to update the navigation menu"
 - Remove steps — "Step 5 is specific to Stripe, not part of the general pattern"
 - Adjust variables — "Add {webhook_url} as a variable"
 - Add gotchas — "Also, the admin cache must be invalidated after config change"
 
-Incorporate feedback and re-present the brief if changes were significant. Only proceed when user confirms.
+**Apply feedback yourself** — you have the full template from Step 2, so surgical edits (changing variability levels, adding/removing steps, adjusting variables) are straightforward. Re-present the brief if changes were significant. Only proceed when user confirms direction.
 
-## Step 4: Full Template Design
+## Step 4: Full Template Review (user validates detail)
 
-After user approves the brief, generate the complete `template.md` + reference files with all details:
+Present the **full template** from the subagent's output, with any changes applied from Step 3:
 - Full step descriptions with file paths and instructions
 - Complete variable table with descriptions and examples
 - Integration points table with actions and variability levels
@@ -174,10 +165,9 @@ After user approves the brief, generate the complete `template.md` + reference f
 - Annotated reference files with [F]/[P]/[G] markers
 - All gotchas
 
-Present the **full template** to the user for final review:
 1. Show the complete template content
 2. Ask: "Final review — anything to adjust before saving?"
-3. User can still make adjustments at this stage
+3. Apply any adjustments the user requests
 4. Iterate until user approves
 
 ## Step 5: Save Template

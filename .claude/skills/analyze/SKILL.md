@@ -19,14 +19,31 @@ Deep, narrow analysis of a specific component. Produces co-located documentation
 
 ## Step 1: Staleness Check
 
-Check if `{component}.analysis.md` already exists alongside the source:
+Check if `{component}.analysis.md` already exists alongside the source.
 
-1. **Does NOT exist** → proceed with **full mode** (Step 3)
-2. **Exists** → read the frontmatter, extract `last_commit` and `entry_files`
-   - Run: `git log -1 --format=%H -- {entry_files}`
-   - Compare the latest commit hash against `last_commit` in frontmatter
-   - **MATCH** (doc is current) → report "Analysis is up to date" and STOP
-   - **MISMATCH** (code changed) → proceed with **update mode** (Step 3)
+### No analysis doc → Full mode (Step 2 or Step 3)
+
+If `--recursive`: proceed to Step 2 (dependency resolution).
+If not recursive: proceed to Step 3 (single-component analysis).
+
+### Analysis doc exists → Hash-based staleness check
+
+1. Read the frontmatter: extract `source_hash`, `entry_files`, and `dependency_tree`
+2. Compute current hash of entry files: use the CLI `hash` command with the `entry_files`
+3. Compare with stored `source_hash`:
+   - **Mismatch** → component source changed → stale
+
+4. If recursive mode AND `dependency_tree` exists in frontmatter:
+   - For each entry in `dependency_tree`:
+     - Compute current hash of the dependency's `entry_files`
+     - Compare with stored `source_hash` for that dependency
+     - **Any mismatch** → a dependency changed → stale
+   - For each entry in `dependency_tree`:
+     - Check that the dependency's `.analysis.md` still exists on disk
+     - **Missing** → stale
+
+5. **All match** → analysis is up to date → report "Analysis is up to date" and STOP
+6. **Any stale** → proceed to Step 2 (recursive) or Step 3 (single-component)
 
 ## Step 1.5: Resolve Import Aliases
 
@@ -38,9 +55,11 @@ Before mapping dependencies, resolve any path aliases used in the project. Commo
 
 **Why:** Aliased imports like `import { auth } from '@/services/authService'` look like external packages but are local code. Treating them as external means skipping their analysis — the component doc will have missing dependency information. Every aliased import that resolves to a path inside the project is a local dependency.
 
-## Step 2: Dependency Resolution (recursive mode only)
+## Step 2: Dependency Resolution + Source Collection (recursive mode only)
 
-Only runs when `--recursive` flag is present.
+Only runs when `--recursive` flag is present. This step prepares everything for a single-agent analysis of the entire dependency tree.
+
+### Step 2a: Build Dependency Tree + Collect Source
 
 1. Read the component's source files
 2. Map all imports. For each import:
@@ -48,41 +67,57 @@ Only runs when `--recursive` flag is present.
    - If resolves to a path inside the project → **local dependency** (include)
    - If resolves to `node_modules`, site-packages, or external registry → **external** (skip)
    - If ambiguous: check if the path exists on disk. If yes → local. If no → external.
-3. Build a dependency tree from all local dependencies
-4. Order: **leaf → top** (deepest dependencies first)
-   - Example: A depends on B, B depends on C → analyze C first, then B, then A
-5. For each dependency (bottom-up):
-   - Run the staleness check (Step 1) on the dependency
-   - If stale or missing: use the Skill tool to invoke `/analyze` on the dependency path
-   - If current: skip (its `.analysis.md` already exists and is up to date)
-6. **Critical:** After each dependency is analyzed, its `.analysis.md` now exists on disk. The next dependency in the chain can read it. This guarantees:
-   - C is analyzed first → `C.analysis.md` is written
-   - B is analyzed next → B's agent receives `C.analysis.md` as dependency context
-   - A is analyzed last → A's agent receives both `B.analysis.md` and `C.analysis.md`
-7. After ALL dependencies are analyzed, proceed to Step 3 for the original component
+3. Recursively resolve dependencies of dependencies until reaching leaves (components with no local dependencies)
+4. Build the full dependency graph: `{component: [direct_dependencies]}`
+
+**Note:** You read every source file during dependency resolution. That source code is now in your context — do NOT re-read it. Label each component's source by name and file path for the subagent prompt.
+
+### Step 2b: Topological Sort
+
+Order the graph **leaf → root** (deepest dependencies first).
+
+Example: A depends on B and C, B depends on D → order is D, C, B, A (C and D are both leaves, either order is fine).
+
+This is the **analysis order** — the agent will analyze components in this sequence.
+
+### Step 2c: Size Guard
+
+If total source code exceeds ~8000 lines (~60K tokens):
+- Warn the user: "Dependency tree has {N} components totaling ~{lines} lines. This may strain context. Options: proceed, or I can analyze subtrees separately."
+- If user wants to split: identify natural subtree boundaries and analyze each subtree as a separate `/analyze --recursive` call, bottom-up.
+
+### Step 2d: Proceed to Step 3
+
+Pass to Step 3: the dependency graph, analysis order, and all source code (already in context from Step 2a).
 
 ## Step 3: Spawn Analyzer Agent
 
 Read the prompt template: `.claude/skills/analyze/analyzer-prompt.md`
 
-1. Collect each data item listed in **For Orchestrator** from its specified source (use the Full Mode or Update Mode table based on Step 1 result)
-2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions. Omit sections marked *(update mode only)* when in full mode. The output format is already embedded in the template — no need to gather it separately.
+1. Collect each data item listed in **For Orchestrator** from its specified source (use the Single Component or Dependency Tree table based on whether Step 2 ran)
+2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions. Include tree-specific sections only for recursive mode. The output format is already embedded in the template.
 3. Spawn an **analyzer subagent** (`.claude/agents/analyzer.md`), passing the filled **For Subagent** section as the prompt
+
+**Single component (no recursion):** Agent receives one component's source, writes one `.analysis.md`.
+**Dependency tree (recursive):** Agent receives all source + dependency graph + analysis order. Analyzes bottom-up, writes one `.analysis.md` per component sequentially.
 
 ## Step 4: Verify Output
 
-After the agent completes:
+After the agent completes, verify **every** `.analysis.md` that should have been produced:
+
+For each component (just the root in single mode, all components in recursive mode):
 1. Confirm `{component}.analysis.md` exists at the correct path
 2. Read the frontmatter and verify:
-   - `last_commit` matches current `git log -1 --format=%H -- {entry_files}`
+   - `source_hash` is populated
    - `entry_files` lists all source files
    - `name`, `type`, `summary` are populated
-3. If this is a new major module not in `.workflow/project-overview.md`, suggest adding it
+3. For recursive mode: verify `dependency_tree` is populated with entries for all transitive dependencies
+4. If any check fails: report which component's analysis is incomplete
 
 ## Step 5: Report to User
 
 If invoked directly by user: show component name, type, key findings, output path.
-If invoked by another skill (`/plan`, `/execute`): return silently.
+If invoked by another skill (`/execute`): return silently.
 
 ---
 

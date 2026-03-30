@@ -31,11 +31,19 @@ When the orchestrator provides plan context (what was being built and why), use 
 - If the plan says "refactor auth to support multi-tenant" and the diff touches auth middleware, that's likely MAJOR — the architecture may have changed.
 - When no plan context is available (manual invocation), assess based on the diff alone — be more conservative.
 
+### Incorporating Executor Discoveries
+When the orchestrator provides executor discoveries for this component, these are experiential findings — wrong assumptions, hidden behaviors, edge cases found during real implementation. This knowledge is precious because it prevents future mistakes.
+- Add each discovery as a row in the Hidden Details table (or the closest equivalent section)
+- Use factual language: "X happens when Y" not "we discovered that X"
+- If a discovery contradicts existing doc content, update the existing content — the discovery is ground truth from implementation
+- If discoveries are provided but the diff classifies as NO UPDATE, escalate to MINOR UPDATE — the experiential knowledge must be recorded even if the code change was trivial
+
 ### Surgical Patching (MINOR updates)
-- Add new rows to existing tables (Dependencies, Public API, Integration Points)
+- Add new rows to existing tables (Dependencies, Public API, Integration Points, Hidden Details)
 - Don't rewrite sections that are still accurate
 - Update `summary` in frontmatter only if the component's core purpose expanded
-- Always update `last_commit` and `last_analyzed`
+- Always update `last_analyzed` to today's date
+- Always recompute `source_hash`: run `python .claude/scripts/workflow_cli.py hash {entry_files}` and update the frontmatter value
 
 ## Decision Framework
 

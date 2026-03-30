@@ -46,12 +46,17 @@ Process groups sequentially (A → B → C). Within each group, phases can run i
 
 ### For each group:
 
-#### Step 2a: Phase Start
+#### Step 2a: Phase Start + Analysis Gate
 
 1. Use the CLI to mark the phase as in-progress
 2. Use the CLI to read all tasks for the phase
-3. Load relevant `.analysis.md` files (Level 1: frontmatter + CONTENT)
-   - These should exist from planning. If missing → use the Skill tool to invoke `/analyze` as fallback
+3. **Analysis gate:** For each component the phase touches (`affected_components` in phase JSON):
+   - Check if `{component}.analysis.md` exists alongside the source
+   - If exists: check staleness — compute content hash of the component's `entry_files` (use CLI `hash` command), compare with `source_hash` in frontmatter. Also check `dependency_tree` hashes if present.
+     - **Current** → read it (Level 1: frontmatter + CONTENT) for the executor prompt
+     - **Stale** → use the Skill tool to invoke `/analyze {component-path} --recursive`, then read the fresh doc
+   - If missing: use the Skill tool to invoke `/analyze {component-path} --recursive`
+4. After all analysis docs are confirmed current: collect them for the executor prompt
 
 #### Step 2b: Phase Execution
 
@@ -114,23 +119,31 @@ New data needed now:
 - **Cumulative git diff:** `git diff {start_commit}..HEAD --name-only` — per-phase diffs don't capture cross-phase interactions
 - **Affected components:** derive from the cumulative diff + phase files (deduplicate)
 
-**2. For each affected component (one loop):**
-- Use the Skill tool to invoke `/doc-update` with the component path, git diff, and plan context
+**2. Classify executor discoveries:**
+
+Split all executor discoveries into two categories:
+
+- **Component-level** — hidden behaviors, edge cases, wrong assumptions about a specific component (e.g., "authService silently retries 3 times", "date parser expects UTC but docs said local time"). These will be passed to `/doc-update` for the relevant component.
+- **Project-level** — cross-component interactions, architecture findings, planning rule corrections, code pattern rules (e.g., "auth middleware and payment service share a session token that must be refreshed atomically"). These are handled in sub-step 4 below.
+
+**3. For each affected component (one loop):**
+- Collect any component-level discoveries relevant to this component
+- Use the Skill tool to invoke `/doc-update` with the component path, git diff, plan context, **and** relevant component-level discoveries
 - While processing: note if changes affect project-level architecture, modules, or data model
 
-**3. After the component loop:**
+**4. After the component loop — handle project-level discoveries:**
 - If any architecture/module/data model changes detected: update `.workflow/project-overview.md`
-- Review all executor discoveries collected in step 1. For each **non-trivial** finding:
+- For each **non-trivial project-level** discovery:
   - Present to user: "During execution, I discovered: {finding}. This should be documented in: {target document}. Proposed update: {content}"
   - If user agrees, apply the update:
-    - Component behavior → update `.analysis.md` Hidden Details table
     - Wrong plan assumption (repeatable) → add rule to `.workflow/rules/planning/`
     - Code pattern correction → add/update rule in `.workflow/rules/code/`
     - Architecture/overview inaccuracy → update `.workflow/project-overview.md`
+    - Cross-component interaction → update relevant `.analysis.md` Hidden Details tables (both components)
   - If user disagrees or trivial: skip
 
 **Skip criteria for discoveries:** Don't surface findings that are:
-- Already captured by the `/doc-update` invocations above (redundant)
+- Already captured by the `/doc-update` invocations above (component-level discoveries are handled there)
 - Trivial — typos, minor style differences, obvious things
 - One-off with no future relevance
 - Things the user told you during execution (they already know)
@@ -143,15 +156,7 @@ Assess whether the completed work represents a **repeatable pattern**:
 
 If yes, suggest: "This looks like a repeatable pattern ({reason}). Want to create a template now? The full execution context is still fresh."
 
-If user agrees: use the Skill tool to invoke `/template-create` with `--from-session` flag.
-
-Pass to the template-extractor agent:
-1. **Plan summary** — what was built and why
-2. **Component intelligence** — from plan + analysis docs
-3. **Phase/task structure** — how work was decomposed
-4. **Git diff** — `git diff {execution_start_commit}..HEAD`
-5. **Execution discoveries** — collected in Step 3a
-6. **Key decisions during execution** — what the executor adapted and why
+If user agrees: use the Skill tool to invoke `/template-create` with `--from-session` flag. The template-create skill runs in this same main session — it will gather context from the conversation history (plan reasoning, component intelligence, execution discoveries, decisions).
 
 If user declines: fine. They can run `/template-create` later.
 

@@ -54,6 +54,12 @@
 | `find-active` | Find plan with active/paused execution | Absolute path to plan directory, or empty if none |
 | `init PLAN_DIR` | Initialize state.json from plan files | Creates `state.json` with correct structure. **Must run after plan approval.** |
 
+### Utility
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `hash FILE [FILE...]` | SHA-256 content hash of file(s) | Hex digest. Multiple files are sorted by path and concatenated before hashing. Used for staleness checks in analysis docs. |
+
 ## Status Lifecycles
 
 **Plan:** `draft` → `reviewed` → `approved` → `executing` → `completed`

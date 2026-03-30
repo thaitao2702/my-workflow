@@ -29,8 +29,10 @@ Usage:
 
   workflow-cli find-active
   workflow-cli init PLAN_DIR
+  workflow-cli hash FILE [FILE...]
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -546,6 +548,23 @@ def cmd_init(plan_dir_str: str):
     print(json.dumps({"created": str(plan_dir / "state.json"), "phases": len(phases)}))
 
 
+# ─── Hash ────────────────────────────────────────────────────────────────────
+
+def cmd_hash(files: list[str]):
+    """Compute SHA-256 of concatenated file contents, sorted by path."""
+    resolved = sorted(files)
+    h = hashlib.sha256()
+    for f in resolved:
+        p = Path(f)
+        if not p.is_absolute():
+            p = find_project_root() / f
+        if not p.exists():
+            print(f"Error: {f} not found.", file=sys.stderr)
+            sys.exit(1)
+        h.update(p.read_bytes())
+    print(h.hexdigest())
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -575,6 +594,10 @@ def main():
 
     if cmd == "init" and len(args) >= 2:
         cmd_init(args[1])
+        return
+
+    if cmd == "hash" and len(args) >= 2:
+        cmd_hash(args[1:])
         return
 
     if cmd == "plan":

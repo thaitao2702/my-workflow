@@ -38,29 +38,23 @@ The agent classifies the changes:
 | **MINOR UPDATE** | Additive change, existing docs mostly accurate | New field, new prop, new endpoint added | Patch `.analysis.md` inline |
 | **MAJOR UPDATE** | Structural change, docs are now misleading | Data flow changed, API contract changed, refactored | Trigger full `/analyze` |
 
-## Step 2: Apply Updates
+## Step 2: Handle Subagent Result
 
-Based on the agent's classification:
+The subagent returns its classification and any actions it took. The orchestrator acts based on the result:
 
-### NO UPDATE
-- Do nothing. Cost: ~500 tokens (just the assessment).
-
-### MINOR UPDATE
-- The doc-updater agent patches the existing `.analysis.md` inline:
-  - Add new props/fields to tables
-  - Add new dependency entries
-  - Update summary if needed
-  - Update `last_commit` and `last_analyzed` in frontmatter
-
-### MAJOR UPDATE
-- Use the Skill tool to invoke `/analyze` on the component path
-- This triggers update-mode or full-mode analysis depending on the scope of changes
+| Classification | What the subagent did | What the orchestrator does next |
+|---|---|---|
+| **NO UPDATE** | Reported classification only | Nothing — proceed to next component |
+| **MINOR UPDATE** | Already patched `.analysis.md` inline (added rows, updated hash/frontmatter) | Proceed to Step 3 (verify the patch) |
+| **MAJOR UPDATE** | Reported classification and recommended `/analyze` | Use the Skill tool to invoke `/analyze` on the component path |
 
 ## Step 3: Verify
 
 After any update (MINOR or MAJOR):
-1. Confirm `.analysis.md` exists and has current `last_commit`
-2. Confirm frontmatter fields are populated
+1. Confirm `.analysis.md` exists
+2. Read frontmatter: verify `source_hash` matches current file hash (use CLI `hash` command with the component's `entry_files`)
+3. Confirm `name`, `type`, `summary`, `entry_files` are populated
+4. If hash mismatch after MINOR update: the doc-updater may not have computed the hash correctly — re-run the hash and patch the frontmatter
 
 ## Constraints
 - Do NOT re-analyze components classified as NO UPDATE — that wastes tokens
@@ -68,3 +62,4 @@ After any update (MINOR or MAJOR):
 - Do NOT skip Step 0 — always check if the analysis doc exists before assessing
 - Do NOT skip the assessment step — always classify before acting
 - When no plan context is available (manual invocation), assess based on the diff alone
+- MINOR patches update `source_hash` but intentionally skip `dependency_tree` hashes — recomputing transitive dependency hashes adds complexity for little benefit. If a dependency changed, the next staleness check will detect the mismatch and trigger a full `/analyze`, which self-corrects.
