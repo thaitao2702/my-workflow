@@ -39,7 +39,7 @@ Codebase architecture, modules, and conventions. Verify the plan fits existing p
 
 ## Review Dimensions
 
-Evaluate against all 10 dimensions. For each, state PASS or FAIL with evidence:
+Evaluate against all 10 dimensions:
 
 1. **Requirement coverage** — every requirement maps to at least one task
 2. **Task atomicity** — each task is completable within its phase's agent session
@@ -51,3 +51,40 @@ Evaluate against all 10 dimensions. For each, state PASS or FAIL with evidence:
 8. **Test coverage mapping** — every behavior has a corresponding test requirement
 9. **Consistency** — no conflicting instructions across phases
 10. **Codebase alignment** — plan respects existing patterns from project overview + component docs
+
+## Output Format
+
+Follow this format exactly:
+
+```
+## Status
+**Result:** PASS | FAIL
+**Passed:** {N}/{total}
+**Failed Dimensions:** [{dimension names}]
+
+## Dimensions
+### {N}. {Dimension Name}
+**Result:** PASS | FAIL
+**Evidence:** {specific reference to plan/phase/task}
+**Fix Required:** {description of what needs fixing} | —
+
+## Escalations
+| Type | Dimension | Description |
+|------|-----------|-------------|
+| ambiguous_criteria ∣ conflicting_rules ∣ unclassifiable | {dimension name} | {details} |
+```
+
+- **Status.Result:** `PASS` = all 10 dimensions pass. `FAIL` = one or more dimensions fail.
+- **Dimensions:** One subsection per dimension, in order. Every dimension must be evaluated — no skipping.
+- **Fix Required:** Describe what needs fixing. Use "—" only if PASS.
+- **Escalations:** Issues with the review criteria themselves, not with the plan. Write "None" if no criteria issues.
+
+## For Orchestrator — Expected Output
+
+| Section | Key Fields | Parse For |
+|---------|-----------|-----------|
+| `## Status` | `**Result**`: PASS ∣ FAIL | Decide: approve or revise plan |
+| | `**Passed**`: N/total | Quick severity gauge |
+| | `**Failed Dimensions**`: list of names | Know which dimensions need revision |
+| `## Dimensions` | Per dimension: `**Result**`, `**Evidence**`, `**Fix Required**` | Specific plan revisions to apply if FAIL |
+| `## Escalations` | Table: Type, Dimension, Description | Criteria issues to resolve before re-review. Type enum: `ambiguous_criteria`, `conflicting_rules`, `unclassifiable` |

@@ -68,11 +68,51 @@ Non-negotiable. All code must pass these standards.
 {tdd_policy}
 When to write tests first and when exceptions apply.
 
-**Discoveries:**
-After completing all tasks, end your output with a `## Discoveries` section. Report anything unexpected you found during implementation:
-- Hidden behaviors not mentioned in the component analysis
-- Wrong assumptions from the plan (constraints that didn't hold, APIs that worked differently)
-- Edge cases you had to handle that weren't anticipated
-- Integration gotchas future work should know about
+## Output Format
 
-If nothing unexpected was found, write `## Discoveries` followed by "None." Do NOT skip this section.
+**CRITICAL:** The main session only receives your final text output — it does NOT see your tool calls, file reads, or reasoning. Everything the orchestrator needs must be in this report. Follow this format exactly.
+
+```
+## Status
+**Result:** SUCCESS | PARTIAL | FAILURE
+**Phase:** {N}
+**Tasks Completed:** [{task-ids}]
+**Tasks Remaining:** [{task-ids}]
+
+## Result
+**Files Changed:** [{paths}]
+**Tests Written:** {N}
+**Tests Passing:** {N}
+
+## Decisions
+| Task | Decision | Reasoning |
+|------|----------|-----------|
+| {task-id} | {what was decided} | {why} |
+
+## Discoveries
+| Component | Finding | Category | Impact |
+|-----------|---------|----------|--------|
+| {path} | {description} | hidden_behavior ∣ wrong_assumption ∣ edge_case ∣ integration_gotcha | {consequence} |
+
+## Escalations
+| Type | Task | Description |
+|------|------|-------------|
+| blocker ∣ ambiguity ∣ scope_mismatch | {task-id} | {details} |
+```
+
+- **Status.Result:** `SUCCESS` = all tasks done. `PARTIAL` = some tasks done, stopped due to blocker. `FAILURE` = no tasks completed.
+- **Decisions:** One row per non-trivial implementation decision. Skip the table if all decisions were obvious.
+- **Discoveries:** One row per unexpected finding. Write "None" if nothing unexpected.
+- **Escalations:** One row per issue requiring orchestrator action. Write "None" if no blockers.
+
+## For Orchestrator — Expected Output
+
+| Section | Key Fields | Parse For |
+|---------|-----------|-----------|
+| `## Status` | `**Result**`: SUCCESS ∣ PARTIAL ∣ FAILURE | Fast triage — proceed, handle partial, or recover |
+| | `**Tasks Completed**`: list of task-ids | State verification against CLI |
+| | `**Tasks Remaining**`: list of task-ids | Know what's left if PARTIAL |
+| `## Result` | `**Files Changed**`, `**Tests Written**`, `**Tests Passing**` | Phase review input, regression check |
+| `## Decisions` | Table: Task, Decision, Reasoning | Context for reviewer, inform doc-update |
+| `## Discoveries` | Table: Component, Finding, Category, Impact | Feed to `/doc-update` reconciliation. Category enum: `hidden_behavior`, `wrong_assumption`, `edge_case`, `integration_gotcha` |
+| `## Escalations` | Table: Type, Task, Description | Handle before proceeding. Type enum: `blocker`, `ambiguity`, `scope_mismatch` |

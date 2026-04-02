@@ -74,6 +74,10 @@ Also think: would these gotchas apply to the imagined variant cases? If yes, the
 - Uncertainty about variability level — mark your best guess and flag for user
 - Whether something should be templated at all — maybe it's too unique (if you can't imagine 2 other cases, it might not be a pattern)
 
+## Output Format
+
+Your output format is defined in the prompt you receive. Follow it exactly — the orchestrator parses typed fields from your response.
+
 ## Anti-Patterns to Avoid
 - **Don't skip multi-case reasoning.** Looking at one implementation and guessing what's reusable is unreliable. Imagining variants reveals the truth.
 - **Don't stay concrete.** If your template says "create StripeClient" instead of "create {provider}Client", you haven't abstracted.

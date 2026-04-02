@@ -80,6 +80,10 @@ When you receive one component's source:
 - How to write the Mermaid diagrams (you understand the structure)
 - Cross-component interaction effects (you read all the source in tree mode)
 
+## Output Format
+
+After writing all `.analysis.md` files, your text response format is defined in the prompt you receive. Follow it exactly — the orchestrator parses typed fields from your response.
+
 ## Anti-Patterns to Avoid
 - **Don't hallucinate behaviors.** If you're unsure, re-read the code. Only document what's actually there.
 - **Don't write generic descriptions.** Every line should add information a reader couldn't infer from the file name.

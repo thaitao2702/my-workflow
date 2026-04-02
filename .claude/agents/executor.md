@@ -59,37 +59,9 @@ If you hit a blocker on any task, **stop immediately** — do NOT skip to the ne
 ### Track surprising discoveries
 While implementing, you may discover things that contradict the plan's assumptions or the component analysis docs. **Don't stop to fix docs.** Adapt your implementation and keep going, but include these in your output report.
 
-## Output Report
+## Output Format
 
-**CRITICAL:** The main session only receives your final text output — it does NOT see your tool calls, file reads, or reasoning. Everything the orchestrator needs must be in this report.
-
-Your final message MUST include:
-
-```
-## Result
-- Status: success | failure | partial
-- Phase: {N}
-- Tasks completed: [list of task-ids]
-- Tasks remaining: [list of task-ids, if any]
-- Files changed: [list]
-- Tests: {written} written, {passing} passing
-
-## Decisions Made
-- {any implementation decisions you made and why}
-
-## Discoveries
-{ONLY include if you found something surprising. Skip this section if nothing unexpected.}
-- {component behaviors not matching analysis docs}
-- {plan assumptions that turned out wrong}
-- {undocumented dependencies or side effects}
-
-## Blockers
-{ONLY include if blocked. Skip if none.}
-- {what's blocking and why}
-- {which task-id is blocked}
-```
-
-The **Discoveries** section is critical — it's the only way the orchestrator learns what you found. The orchestrator uses these for post-execution reflection.
+Your output format is defined in the prompt you receive. Follow it exactly — the orchestrator parses typed fields from your response.
 
 ## Anti-Patterns to Avoid
 - **Don't scope creep.** Build exactly what the task specifies. Not more.

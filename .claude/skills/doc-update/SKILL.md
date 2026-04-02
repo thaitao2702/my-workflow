@@ -1,65 +1,116 @@
 ---
-description: "Assess change significance and update component documentation"
+description: "Maintain the knowledge layer — component analysis docs, project overview, rules"
 ---
 
 # /doc-update — Documentation Update
 
-Assess whether code changes warrant documentation updates, then apply the appropriate level of update. Handles both existing analysis docs and components that have never been analyzed.
+Maintain the knowledge layer after code changes. Handles component analysis docs, project overview, and rules.
 
-**Input:** Component path + git diff + optional plan context (provided by calling skill)
-**Called by:** `/execute` Step 3 (final reconciliation), or manually
+**Input:**
+- `/doc-update --plan-dir $PLAN_DIR` — post-execution reconciliation (full)
+- `/doc-update {component-path}` — single component update
+- `/doc-update` — auto-detect active plan, or ask for component path
 
-## Step 0: Check Analysis Doc Exists
+## Step 0: Determine Mode
 
-Before assessing significance, check if `{component}.analysis.md` exists alongside the source:
+| Input | Mode | Action |
+|---|---|---|
+| `--plan-dir $PLAN_DIR` | Reconciliation | Proceed to Step 1 |
+| Component path | Single | Skip to Step 2 with just this component |
+| No args | Auto-detect | Use CLI `find-active` — if active plan found, use as $PLAN_DIR → reconciliation. If none, ask user for component path → single mode. |
 
-1. **Exists** → proceed to Step 1 (normal assessment flow)
-2. **Does NOT exist** → this component has never been analyzed. Two sub-cases:
-   - **Component was created during this execution** (didn't exist at `execution_start_commit`):
-     → This is a brand new component. Use the Skill tool to invoke `/analyze {component-path}` (full mode). Skip Step 1-2 — full analysis covers everything.
-   - **Component existed before but was never analyzed:**
-     → Use the Skill tool to invoke `/analyze {component-path}` (full mode). This fills the gap that planning missed. Skip Step 1-2.
+## Step 1: Gather Data & Build Manifest (reconciliation mode only)
 
-In both cases, after `/analyze` completes, verify the `.analysis.md` was created (artifact check), then DONE for this component.
+**1. Gather data:**
 
-## Step 1: Assess Change Significance
+Already in conversation context (from execution):
+- Plan summary
+- Executor discoveries (from executor output `## Discoveries` sections)
+
+New data needed:
+- Use the CLI `state get execution_start_commit --plan-dir $PLAN_DIR` to get the start commit
+- **Cumulative diff:** `git diff {start_commit}..HEAD --name-only`
+- **Affected components:** derive from cumulative diff + phase files (deduplicate)
+
+**2. Build Reconciliation Manifest:**
+
+Analyze gathered data and ALL executor discoveries. Produce:
+
+**Component Updates** — one row per affected component:
+
+| Column | Content |
+|---|---|
+| Component | Component path |
+| Changed Files | Files changed in cumulative diff for this component |
+| Discoveries | Relevant discoveries (including cross-component), or "—" |
+
+Cross-component discoveries go into EACH affected component's row.
+
+**Project-Level Updates** — one row per project-wide finding (skip if none):
+
+| Column | Content |
+|---|---|
+| Finding | What was discovered or changed |
+| Target | `project-overview.md`, `rules/planning/`, or `rules/code/` |
+| Proposed Update | Specific content to add or change |
+
+Only non-trivial, repeatable findings not already captured at component level.
+
+## Step 2: Prepare Components
+
+For each component (from manifest in reconciliation mode, or the single component):
+1. Check if `{component}.analysis.md` exists
+2. **Exists** → add to assessment list
+3. **Does NOT exist** → invoke `/analyze {component-path}` (full mode). DONE for this component.
+
+## Step 3: Assess Change Significance
 
 Read the prompt template: `.claude/skills/doc-update/doc-updater-prompt.md`
 
-1. Collect each data item listed in **For Orchestrator** from its specified source
-2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions
-3. Spawn a **doc-updater subagent** (`.claude/agents/doc-updater.md`), passing the filled **For Subagent** section as the prompt
+Collect shared data once (project overview, plan context) + per-component data for each component in assessment list. Fill the prompt template.
 
-The agent classifies the changes:
+Spawn **one** doc-updater subagent (`.claude/agents/doc-updater.md`). It processes all components sequentially.
 
 | Level | Meaning | Example | Action |
 |-------|---------|---------|--------|
-| **NO UPDATE** | Trivial change, docs still accurate | Typo fix, log message, dependency bump | Skip — do nothing |
-| **MINOR UPDATE** | Additive change, existing docs mostly accurate | New field, new prop, new endpoint added | Patch `.analysis.md` inline |
-| **MAJOR UPDATE** | Structural change, docs are now misleading | Data flow changed, API contract changed, refactored | Trigger full `/analyze` |
+| **NO_UPDATE** | Docs still accurate | Typo fix, dependency bump | Skip |
+| **MINOR_UPDATE** | Docs incomplete | New field, new endpoint | Patch inline |
+| **MAJOR_UPDATE** | Docs misleading | Data flow changed, API broke | Full `/analyze` |
 
-## Step 2: Handle Subagent Result
+## Step 4: Handle Subagent Result
 
-The subagent returns its classification and any actions it took. The orchestrator acts based on the result:
+**Parse output** per `doc-updater-prompt.md` § "For Orchestrator — Expected Output":
+- Read `## Status` → `**Result**` and `**Breakdown**` for quick summary
+- For each component in `## Components`, read `**Classification**` and `**Escalation**`
+- Read `## Escalations` table for all components needing `/analyze`
 
-| Classification | What the subagent did | What the orchestrator does next |
+Route each component:
+
+| Classification | Escalation | Action |
 |---|---|---|
-| **NO UPDATE** | Reported classification only | Nothing — proceed to next component |
-| **MINOR UPDATE** | Already patched `.analysis.md` inline (added rows, updated hash/frontmatter) | Proceed to Step 3 (verify the patch) |
-| **MAJOR UPDATE** | Reported classification and recommended `/analyze` | Use the Skill tool to invoke `/analyze` on the component path |
+| `NO_UPDATE` | `NONE` | Skip |
+| `MINOR_UPDATE` | `NONE` | Proceed to Step 5 |
+| `MAJOR_UPDATE` | `ANALYZE_REQUIRED` | Invoke `/analyze` on the component (pass `**Discoveries to Pass**`) |
 
-## Step 3: Verify
+## Step 5: Verify
 
-After any update (MINOR or MAJOR):
+Per component with MINOR or MAJOR updates:
 1. Confirm `.analysis.md` exists
-2. Read frontmatter: verify `source_hash` matches current file hash (use CLI `hash` command with the component's `entry_files`)
-3. Confirm `name`, `type`, `summary`, `entry_files` are populated
-4. If hash mismatch after MINOR update: the doc-updater may not have computed the hash correctly — re-run the hash and patch the frontmatter
+2. Use CLI `analysis check` — verify `fresh`
+3. Confirm frontmatter populated
+4. If stale after MINOR: re-run CLI `hash` and patch `source_hash`
+
+## Step 6: Process Project-Level Updates (reconciliation mode only)
+
+For each row in Project-Level Updates:
+- Present to user: "During execution, I discovered: {Finding}. Target: {Target}. Proposed update: {Proposed Update}"
+- If user approves: apply the update
+- If user declines: skip
 
 ## Constraints
-- Do NOT re-analyze components classified as NO UPDATE — that wastes tokens
-- Do NOT do a full rewrite for MINOR changes — patch inline
-- Do NOT skip Step 0 — always check if the analysis doc exists before assessing
-- Do NOT skip the assessment step — always classify before acting
-- When no plan context is available (manual invocation), assess based on the diff alone
-- MINOR patches update `source_hash` but intentionally skip `dependency_tree` hashes — recomputing transitive dependency hashes adds complexity for little benefit. If a dependency changed, the next staleness check will detect the mismatch and trigger a full `/analyze`, which self-corrects.
+- Do NOT re-analyze components classified as NO_UPDATE
+- Do NOT do full rewrite for MINOR changes — patch inline
+- Do NOT skip existence check (Step 2)
+- Do NOT skip classification — always assess before acting
+- In single mode (no plan context), assess based on diff alone
+- MINOR patches update `source_hash` but skip `dependency_tree` hashes

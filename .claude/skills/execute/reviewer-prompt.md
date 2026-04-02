@@ -58,7 +58,7 @@ Standards to enforce. Flag violations with specific line references.
 
 ## Review Dimensions
 
-Evaluate against all 7 dimensions. For each, state PASS or FAIL with evidence:
+Evaluate against all 7 dimensions:
 
 1. **Acceptance criteria met** — every task's criteria verified
 2. **Scope compliance** — no work outside scope boundaries
@@ -67,3 +67,40 @@ Evaluate against all 7 dimensions. For each, state PASS or FAIL with evidence:
 5. **Test coverage** — every behavior has a corresponding test
 6. **Code quality** — passes all loaded quality rules
 7. **Convention compliance** — matches existing codebase patterns
+
+## Output Format
+
+Follow this format exactly:
+
+```
+## Status
+**Result:** PASS | FAIL
+**Passed:** {N}/{total}
+**Failed Dimensions:** [{dimension names}]
+
+## Dimensions
+### {N}. {Dimension Name}
+**Result:** PASS | FAIL
+**Evidence:** {specific line/file reference from the diff}
+**Fix Required:** {description of what needs fixing} | —
+
+## Escalations
+| Type | Dimension | Description |
+|------|-----------|-------------|
+| ambiguous_criteria ∣ conflicting_rules ∣ unclassifiable | {dimension name} | {details} |
+```
+
+- **Status.Result:** `PASS` = all 7 dimensions pass. `FAIL` = one or more dimensions fail.
+- **Dimensions:** One subsection per dimension, in order. Every dimension must be evaluated — no skipping.
+- **Fix Required:** Describe what needs fixing. Use "—" only if PASS.
+- **Escalations:** Issues with the review criteria themselves, not with the code. Write "None" if no criteria issues.
+
+## For Orchestrator — Expected Output
+
+| Section | Key Fields | Parse For |
+|---------|-----------|-----------|
+| `## Status` | `**Result**`: PASS ∣ FAIL | Decide: proceed or fix |
+| | `**Passed**`: N/total | Quick severity gauge |
+| | `**Failed Dimensions**`: list of names | Know which dimensions need fixes |
+| `## Dimensions` | Per dimension: `**Result**`, `**Evidence**`, `**Fix Required**` | Specific fixes to apply if FAIL |
+| `## Escalations` | Table: Type, Dimension, Description | Criteria issues to resolve before re-review. Type enum: `ambiguous_criteria`, `conflicting_rules`, `unclassifiable` |

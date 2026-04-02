@@ -8,6 +8,7 @@ You are creating a detailed, dependency-aware, quality-checked execution plan. T
 
 **Input:** `/plan "requirement text"`, `/plan ./path/to/requirements.md`, `/plan gh:123`, or `/plan jira:PROJ-456`
 **Output:** `.workflow/plans/{YYMMDD}-{name}/` directory with `plan.json`, phase JSON files, and `state.json`
+**CLI reference:** `.claude/scripts/workflow_cli.reference.md` — use for all plan/phase/state operations. Read it to find exact command syntax.
 
 ## Phase A: Requirement Gathering
 
@@ -19,7 +20,8 @@ Determine the input source and extract requirements:
 |--------------|--------|
 | `"quoted text"` or plain text | Use directly as requirements |
 | `./path/to/file.md` | Read the file, extract requirements |
-| `gh:123` or GitHub URL | Run `gh issue view 123 --json title,body,comments` and extract |
+| `gh:123` or GitHub URL | Use the Skill tool to invoke `/github` with the issue reference |
+| `gl:123` or GitLab URL | Use the Skill tool to invoke `/gitlab` with the issue reference |
 | `jira:PROJ-456` | Use the Skill tool to invoke `/jira` with the ticket ID |
 
 ### Step 2: Template Discovery
@@ -42,10 +44,8 @@ Before planning, check if an existing template matches these requirements:
 Analyze requirements for gaps and ambiguities. **Think deeply before asking — don't ask surface-level questions.**
 
 1. Read `.workflow/project-overview.md` for architectural context
-2. From requirements + project overview, identify **candidate affected areas** — which modules, domains, or features from the project overview are likely involved. You don't know specific files yet — use the modules/domains table and core flows from the overview to identify areas.
-3. For each candidate area, check if an `.analysis.md` file exists **in the same directory** as the component source file (e.g., `src/services/authService.ts` → check for `src/services/authService.analysis.md`). If it exists, note it — you'll use it in Phase B. Do NOT read it yet, and do NOT glob subdirectories — analysis docs are co-located with their source file, not nested.
 
-4. **Self-check before generating questions.** Ask yourself:
+2. **Self-check before generating questions.** Ask yourself:
    - Do I genuinely understand every requirement well enough to break it into concrete tasks?
    - Are there implicit requirements the user assumes but didn't state? (auth, validation, error handling, permissions)
    - What input does this feature need that isn't specified? What's the source of data?
@@ -54,13 +54,13 @@ Analyze requirements for gaps and ambiguities. **Think deeply before asking — 
    - Can this design serve all use cases, or is there a case that makes it fall apart?
    - Where does this feature's scope END? What's explicitly NOT included?
 
-5. Generate specific, concrete clarification questions based on the self-check. Examples:
+3. Generate specific, concrete clarification questions based on the self-check. Examples:
    - "The export feature — should it support CSV only, or also Excel/PDF?"
    - "When the payment fails, should the order stay pending or be cancelled?"
    - NOT: "Can you tell me more about the requirements?" (too open-ended)
 
-6. Present questions to user, wait for answers
-7. Loop until no more genuine gaps (max 3 clarification rounds)
+4. Present questions to user, wait for answers
+5. Loop until no more genuine gaps (max 3 clarification rounds)
 
 If after self-check you have no real questions — requirements are clear and complete — skip directly to Phase B.
 
@@ -87,23 +87,19 @@ For each affected component, use the analysis doc as the primary source when it'
 
 **For each component:**
 
-1. **Check if `.analysis.md` exists** alongside the source (noted in Phase A Step 3).
+1. **Check freshness:** Use the CLI `analysis check` command for each affected component.
 
-2. **If `.analysis.md` exists — verify freshness:**
-   - Compute hash of the component's `entry_files`: `python .claude/scripts/workflow_cli.py hash {entry_files}`
-   - Compare with `source_hash` in the analysis frontmatter
-   - If `dependency_tree` exists in frontmatter, also hash those dependency files and compare
-   - **All hashes match (fresh):** read the `.analysis.md` as your primary source. It contains purpose, public API, hidden behaviors, edge cases, integration patterns, and accumulated experience from prior implementations. Judge whether this gives you enough to plan — if yes, skip source. If you need more detail (e.g., exact internal flow for a complex modification), read source selectively.
-   - **Any hash mismatch (stale):** skip the analysis doc — read source directly instead.
+2. **Act on result:**
+   - **`fresh`** → use the CLI `analysis read --level 1` command to read the analysis doc. Judge whether this gives you enough to plan — if yes, skip source. If you need more detail (e.g., exact internal flow for a complex modification), read source selectively.
+   - **`stale`** → skip the analysis doc — read source directly instead.
+   - **`missing`** → read source directly.
 
-3. **If no `.analysis.md` exists:** read source directly.
-
-4. **What to read from source** (when falling back):
+3. **What to read from source** (when falling back):
    - Modified/Extended components: read thoroughly — every function, not just exports
    - Consumed components: focus on public API / exports
    - Created components: read source of similar existing components for reference patterns
 
-5. **Note what you learn.** Capture key findings that will shape the plan: constraints, hidden behaviors, integration points, existing patterns to follow. These populate `component_intelligence` in Step 7.
+4. **Note what you learn.** Capture key findings that will shape the plan: constraints, hidden behaviors, integration points, existing patterns to follow. These populate `component_intelligence` in Step 7.
 
 **Do NOT invoke `/analyze` during planning.** If an analysis doc is stale or missing, read source directly. Analysis generation is expensive (subagent overhead) and best deferred to the execution analysis gate (Step 2a in `/execute`).
 
@@ -115,10 +111,12 @@ You design the plan directly — no subagent delegation. All context from Phases
 
 These principles govern plan design during Steps 5-7.
 
-#### Task Granularity — The Coherent Unit
-Each phase spawns one executor subagent that implements all tasks sequentially, tracking each task's completion for resume. This means:
+#### Phase Sizing
+Each phase spawns one executor subagent that implements all tasks sequentially. All tasks in a phase must fit in one agent session. If the phase is too large, split into more phases — not more granular tasks.
 
-- **Upper bound:** All tasks in a phase must fit in one agent session. If the phase is too large, split into more phases — not more granular tasks.
+#### Task Granularity — The Coherent Unit
+A task is the unit of progress tracking — the executor marks each task complete for resume. This means:
+
 - **Lower bound:** A task must be a meaningful unit of progress worth tracking independently. A 2-line change doesn't need its own task. Merge trivially small changes (one import, one hook call, one type declaration) with related tasks.
 - **Cohesion:** Tightly coupled changes belong in ONE task. If change A only makes sense because of change B, they're one task:
   - Type declaration + the class that uses it → one task

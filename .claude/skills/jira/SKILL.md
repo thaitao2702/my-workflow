@@ -18,20 +18,26 @@ Fetch a Jira ticket and transform its content (ADF format) into clean, AI-friend
 
 2. Run the fetch script:
    ```
-   python .claude/skills/jira/jira_fetch.py {ticket-id}
+   python .claude/scripts/jira_fetch.py {ticket-id}
    ```
 
 3. The script outputs clean markdown to stdout. Present it to the user or return it to the calling skill.
 
-## If Script Doesn't Exist Yet
+## Setup
 
-If `jira_fetch.py` does not exist, inform the user:
-- "The Jira fetch script hasn't been set up yet. To configure:"
-- "1. Set your Jira token: `export JIRA_TOKEN=your_token`"
-- "2. Update `.workflow/config.json` with your Jira base URL"
-- "3. The script will be created during implementation"
+Requires `.workflow/config.json` with Jira settings:
+```json
+{
+  "jira": {
+    "base_url": "https://yourorg.atlassian.net",
+    "auth_env_var": "JIRA_TOKEN",
+    "email_env_var": "JIRA_EMAIL",
+    "default_project": "PROJ"
+  }
+}
+```
 
-For now, ask the user to paste the ticket content directly.
+Environment variables `JIRA_EMAIL` and `JIRA_TOKEN` must be set.
 
 ## Constraints
 - Do NOT make direct API calls in-context — the script handles this to avoid token waste

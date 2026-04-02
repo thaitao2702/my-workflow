@@ -8,10 +8,10 @@ alwaysApply: true
 
 When starting a session, check for interrupted work:
 
-1. Use the CLI to find the active plan
-2. If found (returns a plan directory path — use this as `$PLAN_DIR`):
-   - Use the CLI to get the current resume point
-   - Inform the user: "Found interrupted execution: **{plan-name}** — Phase {N}, Task {M}. Resume with `/execute --resume`."
+1. Use the CLI to find active plans
+2. If found:
+   - **Single plan** → use it as `$PLAN_DIR`, get the current resume point, inform the user: "Found interrupted execution: **{plan-name}** — Phase {N}, Task {M}. Resume with `/execute --resume`."
+   - **Multiple plans** → list all with name and status, inform the user: "Found {count} interrupted executions:" followed by the list. Ask which to resume, or suggest `/execute --resume` to choose.
 3. Do NOT auto-resume without user confirmation.
 
 ### On Session Interruption

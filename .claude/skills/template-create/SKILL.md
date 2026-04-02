@@ -114,9 +114,13 @@ Read the prompt template: `.claude/skills/template-create/template-extractor-pro
 2. Fill `{placeholders}` in **For Subagent** with collected data, include only sections that have data, keep purpose descriptions
 3. Spawn a **template-extractor subagent** (`.claude/agents/template-extractor.md`), passing the filled **For Subagent** section as the prompt
 
-The agent uses multi-case reasoning to find the right abstraction level — imagines other scenarios that would use this pattern to determine what's truly fixed vs parametric vs guided. It produces the **complete** template in one shot:
-- `template.md` content (overview, steps with [F]/[P]/[G], variables, integration points, test patterns, gotchas)
-- Reference file contents (annotated with variability markers)
+The agent uses multi-case reasoning to find the right abstraction level — imagines other scenarios that would use this pattern to determine what's truly fixed vs parametric vs guided.
+
+**Parse extractor output** per `template-extractor-prompt.md` § "For Orchestrator — Expected Output":
+- Read `## Status` → `**Result**`, `**Pattern**`, `**Steps**`, `**Variables**` for the direction review summary
+- Extract `## Template Content` as raw markdown → this becomes `template.md` after user review
+- Extract `## Reference Files` subsections by `###` headers → each becomes a file in `references/`
+- Read `## Escalations` table → present variability uncertainties to user during direction review
 
 **The subagent is one-shot.** All subsequent refinement happens in the main session with the user.
 

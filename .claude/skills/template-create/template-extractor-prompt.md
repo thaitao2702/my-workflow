@@ -77,14 +77,49 @@ Codebase architecture and conventions. Use to ensure the template fits the proje
 
 **Your Task:**
 
-Apply multi-case reasoning (see your agent instructions) to extract the repeatable pattern. Produce:
+Apply multi-case reasoning (see your agent instructions) to extract the repeatable pattern. Produce your output following the format below — full detail, not a summary. The orchestrator will present a condensed summary to the user first for direction validation, then show the full output for final review. All refinement after your output is handled by the orchestrator with the user.
 
-1. **Template overview** — one-line description of the pattern and when to use it
-2. **Steps** — ordered sequence with `[F]`/`[P]`/`[G]` classification per step
-3. **Variables** — names, descriptions, example values from the original
-4. **Integration points** — where new code connects to existing code, with variability level
-5. **Test patterns** — what tests follow the pattern
-6. **Gotchas** — non-obvious things learned, noting which are pattern-level vs instance-specific
-7. **Reference file contents** — annotated snapshots of key source files with `[F]`/`[P]`/`[G]` markers
+## Output Format
 
-Return the **complete** `template.md` content and reference file contents — full detail, not a summary. The orchestrator will present a condensed summary to the user first for direction validation, then show the full output for final review. All refinement after your output is handled by the orchestrator with the user.
+Follow this format exactly:
+
+```
+## Status
+**Result:** SUCCESS | FAILURE
+**Pattern:** {one-line description of the extracted pattern}
+**Steps:** {N}
+**Variables:** {N}
+**Imagined Cases:** [{2-3 case descriptions used for multi-case reasoning}]
+
+## Template Content
+{complete template.md — YAML frontmatter + full body, as raw markdown}
+
+## Reference Files
+### references/{slug_1}.md
+{complete annotated content with [F]/[P]/[G] markers}
+
+### references/{slug_2}.md
+{complete annotated content with [F]/[P]/[G] markers}
+
+## Escalations
+| Step | Uncertainty | Current Classification | Notes |
+|------|-----------|----------------------|-------|
+| {step name} | {what's uncertain} | F ∣ P ∣ G | {why flagged for user review} |
+```
+
+- **Status.Result:** `SUCCESS` = pattern extracted successfully. `FAILURE` = source material insufficient to extract a meaningful pattern.
+- **Template Content:** The complete `template.md` file content — frontmatter with name, description, trigger_keywords, variables, followed by full body with Overview, Variables table, Steps with [F]/[P]/[G], Integration Points, Tests, Gotchas.
+- **Reference Files:** One `###` subsection per reference file. Filename must match the references in Template Content steps.
+- **Escalations:** Steps where the variability classification is uncertain. Write "None" if all classifications are confident.
+
+## For Orchestrator — Expected Output
+
+| Section | Key Fields | Parse For |
+|---------|-----------|-----------|
+| `## Status` | `**Result**`: SUCCESS ∣ FAILURE | Verify extraction completed |
+| | `**Pattern**`: one-line description | Present in direction review summary |
+| | `**Steps**`, `**Variables**` | Summary counts for direction review |
+| | `**Imagined Cases**` | Verify multi-case reasoning was applied |
+| `## Template Content` | Raw markdown block | Save to `.workflow/templates/{name}/template.md` after user review |
+| `## Reference Files` | Subsections by `### references/{slug}.md` | Save each to `.workflow/templates/{name}/references/{slug}.md` |
+| `## Escalations` | Table: Step, Uncertainty, Current Classification, Notes | Present to user during direction review for confirmation |

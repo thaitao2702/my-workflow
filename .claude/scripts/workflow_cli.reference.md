@@ -51,14 +51,22 @@
 
 | Command | Purpose | Output |
 |---------|---------|--------|
-| `find-active` | Find plan with active/paused execution | Absolute path to plan directory, or empty if none |
+| `find-active` | Find all plans with active/paused execution | One absolute path per line (newest first), or error if none |
 | `init PLAN_DIR` | Initialize state.json from plan files | Creates `state.json` with correct structure. **Must run after plan approval.** |
+
+### Analysis
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `analysis check COMPONENT [--recursive]` | Check if analysis doc is fresh, stale, or missing | JSON: `{"status": "fresh\|stale\|missing", "analysis_path": "...", "reason?": "...", "changed_deps?": [...]}` |
+| `analysis read COMPONENT [--level 0\|1\|2]` | Read analysis doc at progressive loading level | Extracted content. Level 0: frontmatter, Level 1 (default): frontmatter + CONTENT, Level 2: full |
+| `analysis list DIR` | Find all `.analysis.md` files recursively in a directory | One relative path per line |
 
 ### Utility
 
 | Command | Purpose | Output |
 |---------|---------|--------|
-| `hash FILE [FILE...]` | SHA-256 content hash of file(s) | Hex digest. Multiple files are sorted by path and concatenated before hashing. Used for staleness checks in analysis docs. |
+| `hash FILE [FILE...]` | SHA-256 content hash of file(s) | Hex digest. Multiple files are sorted by path and concatenated before hashing. |
 
 ## Status Lifecycles
 

@@ -28,22 +28,11 @@ If not recursive: proceed to Step 3 (single-component analysis).
 
 ### Analysis doc exists → Hash-based staleness check
 
-1. Read the frontmatter: extract `source_hash`, `entry_files`, and `dependency_tree`
-2. Compute current hash of entry files: use the CLI `hash` command with the `entry_files`
-3. Compare with stored `source_hash`:
-   - **Mismatch** → component source changed → stale
+Use the CLI `analysis check` command (add `--recursive` if in recursive mode).
 
-4. If recursive mode AND `dependency_tree` exists in frontmatter:
-   - For each entry in `dependency_tree`:
-     - Compute current hash of the dependency's `entry_files`
-     - Compare with stored `source_hash` for that dependency
-     - **Any mismatch** → a dependency changed → stale
-   - For each entry in `dependency_tree`:
-     - Check that the dependency's `.analysis.md` still exists on disk
-     - **Missing** → stale
-
-5. **All match** → analysis is up to date → report "Analysis is up to date" and STOP
-6. **Any stale** → proceed to Step 2 (recursive) or Step 3 (single-component)
+- **`fresh`** → analysis is up to date → report "Analysis is up to date" and STOP
+- **`stale`** → the response includes the reason and which files/deps changed → proceed to Step 2 (recursive) or Step 3 (single-component)
+- **`missing`** → should not happen in this branch (analysis doc exists), but treat as full mode
 
 ## Step 1.5: Resolve Import Aliases
 
@@ -103,6 +92,10 @@ Read the prompt template: `.claude/skills/analyze/analyzer-prompt.md`
 
 ## Step 4: Verify Output
 
+**Parse analyzer text output** per `analyzer-prompt.md` § "For Orchestrator — Expected Output":
+- Read `## Status` → `**Result**`: if not `SUCCESS`, check `## Warnings` for issues
+- Read `## Files Written` table — use Output Path and Source Hash for verification below
+
 After the agent completes, verify **every** `.analysis.md` that should have been produced:
 
 For each component (just the root in single mode, all components in recursive mode):
@@ -125,16 +118,4 @@ If invoked by another skill (`/execute`): return silently.
 
 The full format spec is embedded in the analyzer prompt template (`.claude/skills/analyze/analyzer-prompt.md`). Below is reference info for consumers of analysis docs.
 
-### Progressive Loading
-
-| Level | What to Read | Tokens | When to Use |
-|-------|-------------|--------|-------------|
-| **0** | Frontmatter only (first ~10 lines) | ~50 | Scanning dependencies, building project map |
-| **1** | Frontmatter + CONTENT section | ~300-500 | Implementing code that interacts with this component |
-| **2** | Full document | ~500-800 | Modifying this component's internal code |
-
-### Naming Rules
-
-- Single-file: `{FileName}.analysis.md` next to `{FileName}.{ext}`
-- Multi-file module: `{module-name}.analysis.md` at module root
-- `entry_files` in frontmatter lists which source files belong to the component
+See `.claude/rules/analysis-docs.md` for naming conventions and progressive loading levels.

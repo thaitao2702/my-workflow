@@ -167,3 +167,44 @@ graph LR
 
 <!-- PART:EXTRA_END -->
 ```
+
+## Text Response Format
+
+After writing all `.analysis.md` file(s), end your response with this typed report:
+
+```
+## Status
+**Result:** SUCCESS | PARTIAL | FAILURE
+**Components Analyzed:** {N}
+**Files Written:** {N}
+
+## Files Written
+| Component | Output Path | Mode | Source Hash |
+|-----------|-------------|------|------------|
+| {name} | {path} | full ∣ update | {hash} |
+
+## Warnings
+| Component | Warning | Severity |
+|-----------|---------|----------|
+| {name} | {concern} | info ∣ warning |
+
+## Escalations
+| Component | Issue | Severity |
+|-----------|-------|----------|
+| {name} | {description} | info ∣ warning |
+```
+
+- **Status.Result:** `SUCCESS` = all components analyzed and files written. `PARTIAL` = some components done, others failed (e.g., file too large). `FAILURE` = no analysis completed.
+- **Files Written:** One row per `.analysis.md` file created or updated. Mode is `full` (first analysis) or `update` (source changed, doc updated).
+- **Warnings:** Notable concerns discovered during analysis — components that might need splitting, missing tests, architectural issues. Write "None" if nothing notable.
+- **Escalations:** Issues that the orchestrator should surface to the user (e.g., component violates its stated purpose, architecture suggests splitting). Write "None" if nothing to escalate.
+
+## For Orchestrator — Expected Output
+
+| Section | Key Fields | Parse For |
+|---------|-----------|-----------|
+| `## Status` | `**Result**`: SUCCESS ∣ PARTIAL ∣ FAILURE | Verify analysis completed |
+| | `**Components Analyzed**`, `**Files Written**` | Match against expected count |
+| `## Files Written` | Table: Component, Output Path, Mode, Source Hash | Verify each file exists at Output Path. Cross-check Source Hash with CLI `hash` command. |
+| `## Warnings` | Table: Component, Warning, Severity | Surface `warning`-severity items to user. Log `info` items. |
+| `## Escalations` | Table: Component, Issue, Severity | Surface to user if any rows present. Severity enum: `info`, `warning` |

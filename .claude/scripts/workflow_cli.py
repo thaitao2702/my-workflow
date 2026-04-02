@@ -27,6 +27,10 @@ Usage:
   workflow-cli state log MESSAGE [--plan-dir DIR]
   workflow-cli state set FIELD VALUE [--plan-dir DIR]
 
+  workflow-cli analysis check COMPONENT [--recursive]
+  workflow-cli analysis read COMPONENT [--level 0|1|2]
+  workflow-cli analysis list DIR
+
   workflow-cli find-active
   workflow-cli init PLAN_DIR
   workflow-cli hash FILE [FILE...]
@@ -52,21 +56,21 @@ def find_project_root() -> Path:
     return cwd
 
 
-def find_active_plan() -> Path | None:
-    """Find the plan directory with status executing or paused."""
+def find_active_plans() -> list[Path]:
+    """Find all plan directories with status executing or paused."""
     root = find_project_root()
     plans_dir = root / WORKFLOW_DIR
     if not plans_dir.exists():
-        return None
+        return []
 
+    results = []
     for plan_dir in sorted(plans_dir.iterdir(), reverse=True):
         state_file = plan_dir / "state.json"
         if state_file.exists():
             state = json.loads(state_file.read_text(encoding="utf-8"))
             if state.get("status") in ("executing", "paused"):
-                return plan_dir
-
-    return None
+                results.append(plan_dir)
+    return results
 
 
 def find_latest_plan() -> Path | None:
@@ -111,9 +115,9 @@ def resolve_plan_dir(explicit: str | None = None) -> Path:
         # Fall back to relative from root (original behavior — will error with clear message)
         return candidate
 
-    active = find_active_plan()
+    active = find_active_plans()
     if active:
-        return active
+        return active[0]
 
     latest = find_latest_plan()
     if latest:
@@ -496,10 +500,11 @@ def cmd_state_set(plan_dir: Path, field: str, value: str):
 # ─── Init & Find ─────────────────────────────────────────────────────────────
 
 def cmd_find_active():
-    """Find plan directory with active execution."""
-    active = find_active_plan()
+    """Find plan directories with active execution."""
+    active = find_active_plans()
     if active:
-        print(str(active))
+        for plan_dir in active:
+            print(str(plan_dir))
     else:
         print("No active execution found.", file=sys.stderr)
         sys.exit(1)
@@ -548,21 +553,310 @@ def cmd_init(plan_dir_str: str):
     print(json.dumps({"created": str(plan_dir / "state.json"), "phases": len(phases)}))
 
 
+# ─── Analysis ─────────────────────────────────────────────────────────────────
+
+def _compute_hash(files: list[str]) -> str:
+    """Compute SHA-256 of concatenated file contents, sorted by path."""
+    resolved = sorted(files)
+    h = hashlib.sha256()
+    root = find_project_root()
+    for f in resolved:
+        p = Path(f)
+        if not p.is_absolute():
+            p = root / f
+        if not p.exists():
+            raise FileNotFoundError(f)
+        h.update(p.read_bytes())
+    return h.hexdigest()
+
+
+def _parse_frontmatter(analysis_path: Path) -> dict | None:
+    """Parse YAML frontmatter from an analysis doc. Returns dict or None."""
+    text = analysis_path.read_text(encoding="utf-8")
+    if not text.startswith("---"):
+        return None
+    end = text.find("---", 3)
+    if end == -1:
+        return None
+    fm_text = text[3:end].strip()
+    result = {}
+    current_key = None
+    current_list = None
+    current_dict = None
+
+    for line in fm_text.split("\n"):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        # Top-level key: value
+        if not line.startswith(" ") and not line.startswith("\t") and ":" in stripped:
+            # Save previous list/dict
+            if current_key and current_list is not None:
+                result[current_key] = current_list
+                current_list = None
+                current_dict = None
+
+            key, _, val = stripped.partition(":")
+            key = key.strip()
+            val = val.strip()
+
+            if val.startswith("[") and val.endswith("]"):
+                # Inline list: [a, b, c]
+                items = [v.strip().strip("'\"") for v in val[1:-1].split(",") if v.strip()]
+                result[key] = items
+                current_key = None
+            elif val:
+                result[key] = val.strip("'\"")
+                current_key = None
+            else:
+                # Start of a block list or nested structure
+                current_key = key
+                current_list = []
+                current_dict = None
+        elif current_key is not None and stripped.startswith("- "):
+            # List item
+            content = stripped[2:].strip()
+            if ":" in content and not content.startswith("["):
+                # Dict item start: - key: value
+                k, _, v = content.partition(":")
+                current_dict = {k.strip(): v.strip().strip("'\"")}
+                current_list.append(current_dict)
+            elif content.startswith("[") and content.endswith("]"):
+                # List item that is an inline list
+                items = [v.strip().strip("'\"") for v in content[1:-1].split(",") if v.strip()]
+                current_list.append(items)
+            else:
+                current_dict = None
+                current_list.append(content.strip("'\""))
+        elif current_dict is not None and ":" in stripped:
+            # Continuation of a dict inside a list item
+            k, _, v = stripped.partition(":")
+            k = k.strip()
+            v = v.strip()
+            if v.startswith("[") and v.endswith("]"):
+                current_dict[k] = [x.strip().strip("'\"") for x in v[1:-1].split(",") if x.strip()]
+            else:
+                current_dict[k] = v.strip("'\"")
+
+    # Flush last list
+    if current_key and current_list is not None:
+        result[current_key] = current_list
+
+    return result
+
+
+def _find_analysis_doc(component_path: Path) -> Path:
+    """Derive analysis doc path from component path."""
+    if component_path.is_dir():
+        return component_path / f"{component_path.name}.analysis.md"
+    else:
+        return component_path.parent / f"{component_path.stem}.analysis.md"
+
+
+def cmd_analysis_check(component: str, recursive: bool):
+    """Check if analysis doc is fresh, stale, or missing."""
+    root = find_project_root()
+    comp_path = Path(component)
+    if not comp_path.is_absolute():
+        comp_path = root / component
+
+    analysis_path = _find_analysis_doc(comp_path)
+
+    def _rel(p: Path) -> str:
+        try:
+            return str(p.relative_to(root))
+        except ValueError:
+            return str(p)
+
+    if not analysis_path.exists():
+        print(json.dumps({
+            "status": "missing",
+            "expected_path": _rel(analysis_path),
+        }))
+        return
+
+    rel_analysis = _rel(analysis_path)
+    fm = _parse_frontmatter(analysis_path)
+    if not fm:
+        print(json.dumps({
+            "status": "stale",
+            "analysis_path": rel_analysis,
+            "reason": "no frontmatter found",
+        }))
+        return
+
+    entry_files = fm.get("entry_files", [])
+    stored_hash = fm.get("source_hash", "")
+
+    if not entry_files or not stored_hash:
+        print(json.dumps({
+            "status": "stale",
+            "analysis_path": rel_analysis,
+            "reason": "missing entry_files or source_hash in frontmatter",
+        }))
+        return
+
+    # Check source hash
+    try:
+        current_hash = _compute_hash(entry_files)
+    except FileNotFoundError as e:
+        print(json.dumps({
+            "status": "stale",
+            "analysis_path": rel_analysis,
+            "reason": f"entry file not found: {e}",
+        }))
+        return
+
+    if current_hash != stored_hash:
+        print(json.dumps({
+            "status": "stale",
+            "analysis_path": rel_analysis,
+            "reason": "source_hash mismatch",
+            "entry_files": entry_files,
+        }))
+        return
+
+    # Check dependency tree if recursive
+    if recursive:
+        dep_tree = fm.get("dependency_tree", [])
+        if dep_tree and isinstance(dep_tree, list):
+            for dep in dep_tree:
+                if not isinstance(dep, dict):
+                    continue
+                dep_name = dep.get("name", "unknown")
+                dep_files = dep.get("entry_files", [])
+                dep_hash = dep.get("source_hash", "")
+
+                if isinstance(dep_files, str):
+                    dep_files = [dep_files]
+
+                if dep_files and dep_hash:
+                    try:
+                        current_dep_hash = _compute_hash(dep_files)
+                    except FileNotFoundError as e:
+                        print(json.dumps({
+                            "status": "stale",
+                            "analysis_path": rel_analysis,
+                            "reason": f"dependency file not found: {e}",
+                            "changed_deps": [dep_name],
+                        }))
+                        return
+
+                    if current_dep_hash != dep_hash:
+                        print(json.dumps({
+                            "status": "stale",
+                            "analysis_path": rel_analysis,
+                            "reason": "dependency stale",
+                            "changed_deps": [dep_name],
+                        }))
+                        return
+
+                # Check dependency's analysis doc exists
+                if dep_files:
+                    dep_path = Path(dep_files[0])
+                    if not dep_path.is_absolute():
+                        dep_path = root / dep_files[0]
+                    dep_analysis = _find_analysis_doc(dep_path)
+                    if not dep_analysis.exists():
+                        print(json.dumps({
+                            "status": "stale",
+                            "analysis_path": rel_analysis,
+                            "reason": "dependency analysis missing",
+                            "changed_deps": [dep_name],
+                        }))
+                        return
+
+    print(json.dumps({
+        "status": "fresh",
+        "analysis_path": rel_analysis,
+    }))
+
+
+def cmd_analysis_read(component: str, level: int):
+    """Read analysis doc at specified progressive loading level."""
+    root = find_project_root()
+    comp_path = Path(component)
+    if not comp_path.is_absolute():
+        comp_path = root / component
+
+    analysis_path = _find_analysis_doc(comp_path)
+
+    if not analysis_path.exists():
+        print(f"Error: analysis doc not found at {analysis_path}", file=sys.stderr)
+        sys.exit(1)
+
+    text = analysis_path.read_text(encoding="utf-8")
+
+    if level == 2:
+        print(text)
+        return
+
+    if level == 0:
+        # Frontmatter only: between first --- and second ---
+        if text.startswith("---"):
+            end = text.find("---", 3)
+            if end != -1:
+                print(text[:end + 3])
+                return
+        # Fallback: print whole file
+        print(text)
+        return
+
+    # Level 1: frontmatter + CONTENT section
+    parts = []
+
+    # Extract frontmatter
+    if text.startswith("---"):
+        end = text.find("---", 3)
+        if end != -1:
+            parts.append(text[:end + 3])
+
+    # Extract CONTENT section
+    content_start = text.find("<!-- PART:CONTENT_START -->")
+    content_end = text.find("<!-- PART:CONTENT_END -->")
+    if content_start != -1 and content_end != -1:
+        parts.append(text[content_start:content_end + len("<!-- PART:CONTENT_END -->")])
+    elif content_start != -1:
+        # No end marker — take from start marker to EXTRA or end of file
+        extra_start = text.find("<!-- PART:EXTRA_START -->")
+        if extra_start != -1:
+            parts.append(text[content_start:extra_start])
+        else:
+            parts.append(text[content_start:])
+
+    if content_start != -1:
+        # Had CONTENT markers — return frontmatter + extracted content
+        print("\n\n".join(parts))
+    else:
+        # No CONTENT markers — return full file as fallback
+        print(text)
+
+
+def cmd_analysis_list(directory: str):
+    """List all .analysis.md files in a directory."""
+    root = find_project_root()
+    dir_path = Path(directory)
+    if not dir_path.is_absolute():
+        dir_path = root / directory
+
+    if not dir_path.is_dir():
+        print(f"Error: {directory} is not a directory.", file=sys.stderr)
+        sys.exit(1)
+
+    for p in sorted(dir_path.rglob("*.analysis.md")):
+        print(str(p.relative_to(root)))
+
+
 # ─── Hash ────────────────────────────────────────────────────────────────────
 
 def cmd_hash(files: list[str]):
     """Compute SHA-256 of concatenated file contents, sorted by path."""
-    resolved = sorted(files)
-    h = hashlib.sha256()
-    for f in resolved:
-        p = Path(f)
-        if not p.is_absolute():
-            p = find_project_root() / f
-        if not p.exists():
-            print(f"Error: {f} not found.", file=sys.stderr)
-            sys.exit(1)
-        h.update(p.read_bytes())
-    print(h.hexdigest())
+    try:
+        print(_compute_hash(files))
+    except FileNotFoundError as e:
+        print(f"Error: {e} not found.", file=sys.stderr)
+        sys.exit(1)
 
 
 # ─── Main ────────────────────────────────────────────────────────────────────
@@ -598,6 +892,24 @@ def main():
 
     if cmd == "hash" and len(args) >= 2:
         cmd_hash(args[1:])
+        return
+
+    if cmd == "analysis":
+        if sub == "check" and len(args) >= 3:
+            recursive = "--recursive" in args
+            cmd_analysis_check(args[2], recursive)
+        elif sub == "read" and len(args) >= 3:
+            level = 1  # default
+            if "--level" in args:
+                li = args.index("--level")
+                if li + 1 < len(args):
+                    level = int(args[li + 1])
+            cmd_analysis_read(args[2], level)
+        elif sub == "list" and len(args) >= 3:
+            cmd_analysis_list(args[2])
+        else:
+            print(f"Unknown analysis command: {sub}", file=sys.stderr)
+            sys.exit(1)
         return
 
     if cmd == "plan":
