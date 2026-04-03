@@ -13,6 +13,7 @@ When starting a session, check for interrupted work:
    - **Single plan** → use it as `$PLAN_DIR`, get the current resume point, inform the user: "Found interrupted execution: **{plan-name}** — Phase {N}, Task {M}. Resume with `/execute --resume`."
    - **Multiple plans** → list all with name and status, inform the user: "Found {count} interrupted executions:" followed by the list. Ask which to resume, or suggest `/execute --resume` to choose.
 3. Do NOT auto-resume without user confirmation.
+4. Check session log for directives: review `state show --plan-dir $PLAN_DIR` for entries containing "DIRECTIVE:". If found, present to user: "Active directives from previous session:" followed by the list. Ask: "Still applicable?" Include confirmed directives in subsequent checkpoints and agent prompts.
 
 ### On Session Interruption
 

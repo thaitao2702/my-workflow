@@ -18,6 +18,7 @@ Each row names a data item and where to get it. Collect all before constructing 
 | Component analysis | Relevant `.analysis.md` files (Level 1: frontmatter + CONTENT) — guaranteed fresh by Step 2a analysis gate |
 | Code quality rules | `.workflow/rules/code/*.md` (if any) |
 | TDD policy | `.claude/rules/tdd-policy.md` |
+| User directives | Active user directives captured during this execution session (from checkpoint `User directives` fields). Format as bulleted list. Omit section entirely if none exist. |
 
 ## For Subagent — Prompt to Pass
 
@@ -67,6 +68,10 @@ Non-negotiable. All code must pass these standards.
 **TDD Policy:**
 {tdd_policy}
 When to write tests first and when exceptions apply.
+
+**User Directives:** *(include only if directives exist)*
+{user_directives}
+Instructions from the user during this execution. These override default assumptions where applicable.
 
 ## Output Format
 

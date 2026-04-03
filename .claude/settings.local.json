@@ -10,7 +10,11 @@
       "Bash(python .claude/scripts/workflow_cli.py state complete-task 1 task-02 --plan-dir .workflow/plans/260323-test)",
       "Bash(python .claude/scripts/workflow_cli.py state complete-phase 1 --plan-dir .workflow/plans/260323-test)",
       "Bash(python .claude/scripts/workflow_cli.py find-active)",
-      "Bash(python .claude/scripts/workflow_cli.py state current --plan-dir .workflow/plans/260323-test)"
+      "Bash(python .claude/scripts/workflow_cli.py state current --plan-dir .workflow/plans/260323-test)",
+      "Bash(python:*)",
+      "Bash(/tmp/analysis-test/test.analysis.md:*)",
+      "Bash(.workflow/test-fixture/test.analysis.md:*)",
+      "Bash($CLI phase:*)"
     ]
   }
 }
