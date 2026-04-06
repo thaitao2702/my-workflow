@@ -1,5 +1,13 @@
 ---
-description: "Create an execution plan from requirements — phases, tasks, dependency graph, quality review"
+description: |
+  Create phased execution plans with dependency graphs, component intelligence,
+  and quality review. Transforms requirements (text, files, GitHub issues, Jira
+  tickets) into structured plan.json + phase files that executor agents implement.
+  Use when the user wants to plan work, break down a feature, create tasks, scope
+  a project, or says "let's plan this" — even if they don't say "/plan." Also
+  triggers for re-planning after scope changes and multi-phase project breakdown.
+  Do NOT use for direct implementation (use /execute), code review, or single-file
+  changes that need no phased approach.
 ---
 
 # /plan — Create Execution Plan
@@ -9,6 +17,32 @@ You are creating a detailed, dependency-aware, quality-checked execution plan. T
 **Input:** `/plan "requirement text"`, `/plan ./path/to/requirements.md`, `/plan gh:123`, or `/plan jira:PROJ-456`
 **Output:** `.workflow/plans/{YYMMDD}-{name}/` directory with `plan.json`, phase JSON files, and `state.json`
 **CLI reference:** `.claude/scripts/workflow_cli.reference.md` — use for all plan/phase/state operations. Read it to find exact command syntax.
+
+## Expert Vocabulary Payload
+
+**Requirements Analysis:** requirement elicitation, clarification round (max 3), implicit requirement discovery, scope boundary (in_scope/out_of_scope), unhappy path analysis, ambiguity resolution
+
+**Plan Architecture:** phased execution plan, dependency graph (DAG), parallel execution group, task granularity (coherent unit), phase sizing (one-agent-session), mission briefing (plan summary), acceptance criteria (verifiable-by-running)
+
+**Component Intelligence:** analysis doc freshness (fresh/stale/missing), progressive loading level (0/1/2), component role classification (Modified/Extended/Consumed/Created), analysis gate, knowledge layer
+
+**Quality Assurance:** plan review (10-dimension evaluation), direction checkpoint (Step 6), revision round (max 2), automated review before user review
+
+**Knowledge Capture:** corrections log, findings log, documentation contradiction, doc status (contradicts_analysis/missing_from_analysis/contradicts_overview/missing_from_overview), post-planning knowledge update
+
+## Anti-Pattern Watchlist
+
+### Parallel File Conflict
+- **Detection:** Phases in the same execution group modify the same files. Causes merge conflicts when phases run in parallel.
+- **Resolution:** Check every file in `tasks[].files` across phases in the same group. If any file appears in two phases within the same group, move one phase to a later group.
+
+### Analysis Over-Read
+- **Detection:** Invoking `/analyze` during planning. Reading 20+ source files when 5 would suffice. Extensive codebase exploration without producing plan content.
+- **Resolution:** Use analysis docs when fresh, read source directly when stale/missing. Defer `/analyze` to the execution analysis gate (Step 2a in `/execute`). Explore enough to plan, then start designing.
+
+### Skipped Direction Checkpoint
+- **Detection:** Full plan JSON written without presenting a direction summary to the user first. User sees the complete plan as the first output.
+- **Resolution:** Always produce a brief direction summary (Step 5) and get user approval (Step 6) before writing plan files (Step 7). Catching directional mistakes early is cheap; rewriting a reviewed plan is expensive.
 
 ## Phase A: Requirement Gathering
 
@@ -46,12 +80,9 @@ Analyze requirements for gaps and ambiguities. **Think deeply before asking — 
 1. Read `.workflow/project-overview.md` for architectural context
 
 2. **Self-check before generating questions.** Ask yourself:
-   - Do I genuinely understand every requirement well enough to break it into concrete tasks?
    - Are there implicit requirements the user assumes but didn't state? (auth, validation, error handling, permissions)
-   - What input does this feature need that isn't specified? What's the source of data?
-   - What scenarios would break this? What's the unhappy path?
-   - Does this feature depend on anything external not mentioned? (APIs, services, configs)
-   - Can this design serve all use cases, or is there a case that makes it fall apart?
+   - What data sources, dependencies, or external systems are needed but not mentioned?
+   - What scenarios would break this? What are the unhappy paths and edge cases?
    - Where does this feature's scope END? What's explicitly NOT included?
 
 3. Generate specific, concrete clarification questions based on the self-check. Examples:
@@ -61,6 +92,18 @@ Analyze requirements for gaps and ambiguities. **Think deeply before asking — 
 
 4. Present questions to user, wait for answers
 5. Loop until no more genuine gaps (max 3 clarification rounds)
+
+6. **After clarification rounds complete**, check if the user corrected any assumptions that contradict existing documentation. If so, record them:
+
+**Corrections Log:**
+| Correction | Source | Contradicts | Target Doc |
+|-----------|--------|-------------|------------|
+
+Only record corrections where existing documentation (analysis docs, project-overview) says something different from what the user clarified. Not new requirements — contradictions of existing documented knowledge. Examples:
+- User says "that service doesn't handle retries anymore" but analysis doc says it does → record
+- User says "the feature should support CSV export" (new requirement) → don't record
+
+If no corrections: write "None" under the table header.
 
 If after self-check you have no real questions — requirements are clear and complete — skip directly to Phase B.
 
@@ -100,6 +143,20 @@ For each affected component, use the analysis doc as the primary source when it'
    - Created components: read source of similar existing components for reference patterns
 
 4. **Note what you learn.** Capture key findings that will shape the plan: constraints, hidden behaviors, integration points, existing patterns to follow. These populate `component_intelligence` in Step 7.
+
+5. **Log documentation contradictions.** If you discover anything that contradicts or is missing from existing documentation, log it:
+
+**Findings Log:**
+| Component | Finding | Doc Status | Target |
+|-----------|---------|-----------|--------|
+
+Doc Status values:
+- `contradicts_analysis` — analysis doc states X, but source shows Y
+- `missing_from_analysis` — source has non-obvious behavior not captured in analysis doc
+- `contradicts_overview` — project-overview describes something inaccurately
+- `missing_from_overview` — project-overview is missing relevant architectural context
+
+Only non-obvious findings — not "the function exists" but "the analysis doc says async but the code is synchronous." If no findings: write "None" under the table header.
 
 **Do NOT invoke `/analyze` during planning.** If an analysis doc is stale or missing, read source directly. Analysis generation is expensive (subagent overhead) and best deferred to the execution analysis gate (Step 2a in `/execute`).
 
@@ -231,17 +288,11 @@ Direction approved — now materialize the full plan to disk.
 **Field definitions:**
 - `name`: kebab-case feature identifier, used for directory naming
 - `status`: `draft` → `reviewed` → `approved` → `executing` → `completed`
-- `summary`: **Mission briefing for the executor.** This is the primary guidance document — an executor agent reading ONLY this summary + a task description should understand enough to implement correctly. Include:
-  - What we're building and why (the goal, not just the feature name)
-  - Key architectural decisions and constraints ("polling only, no events", "activated by URL param only", "reads internal state but never modifies game logic")
-  - Important context that affects HOW tasks should be implemented ("bridge must have zero cost when not activated", "all state reads go through GlobalContext singletons")
-  - Relationships to other systems if relevant ("QA platform depends on bridge-api.md output")
-  - NOT implementation details (no property paths, no method signatures — those belong in analysis docs and source code)
-  - Target: ~200-400 tokens. Rich enough to guide, concise enough to include in every executor prompt.
+- `summary`: Mission briefing for the executor — see "Plan Summary as Mission Briefing" principle above. Target: ~200-400 tokens.
 - `scope.in_scope` / `out_of_scope`: explicit boundaries to prevent scope creep during execution
-- `component_intelligence`: key findings from pre-planning analysis that explain WHY the plan makes certain choices. These are facts discovered during component analysis that the executor needs to know — edge cases, hidden constraints, non-obvious behaviors. (e.g., "AutoPopup.onConfirmClicked() is private — use onConfirm callback instead", "numberAutoSpin uses -1 as disabled sentinel, Infinity as unlimited")
+- `component_intelligence`: Key findings from analysis that shaped plan choices — see "Using Component Intelligence" principle above.
 - `phases[].dependencies`: array of phase numbers that must complete BEFORE this phase starts. Drives execution ordering.
-- `phases[].group`: parallel execution group letter (A, B, C...). **Phases in the same group run simultaneously.** This means they MUST NOT modify the same files — file conflicts in parallel execution cause merge failures. Group A runs first, then all of group B in parallel, then group C, etc.
+- `phases[].group`: Parallel execution group letter (A, B, C...). Phases in the same group run simultaneously — see "Parallel Safety" principle above.
 - `dependency_graph_mermaid`: Mermaid diagram string showing phase dependencies visually
 - `risks`: informed by component analysis hidden details — what could go wrong, how to mitigate. Each risk should have a concrete mitigation the executor can follow.
 
@@ -280,17 +331,12 @@ Direction approved — now materialize the full plan to disk.
 - `depends_on`: phase numbers that must complete first. Must match plan.json dependencies.
 - `affected_components`: file paths of components this phase touches — used by `/doc-update` during reconciliation
 - `goal`: **Phase briefing.** What this phase achieves and why it matters in the overall plan. An executor starting this phase should understand: what the phase produces, how it connects to other phases, what constraints apply. Include context that's specific to this phase but not repeated in every task. (e.g., "After this phase, the bridge contract is defined and any game can extend it. All files are pure TypeScript — zero engine imports.") Target: 2-4 sentences.
-- `tasks[]`: Each task is a **coherent unit of work** — meaningful enough to track independently (the executor marks each complete for resume), small enough that all tasks in the phase fit in one agent session. Tightly coupled changes (type + class, accessor + consumer, multiple hooks for the same concern) belong in ONE task. A 2-line change should NOT be its own task.
-- `tasks[].id`: unique within the phase, format `task-NN`
-- `tasks[].description`: **WHAT to do and WHY.** The executor decides HOW to implement by reading source code and analysis docs. Description should include:
-  - What to create or modify
-  - Why this task exists (its purpose in the phase)
-  - Constraints and boundaries ("zero engine imports", "no-op when bridge inactive")
-  - Which components to reference for patterns
-  - Do NOT include: exact property paths, method signatures, implementation code, line numbers. Those belong in `.analysis.md` docs and source code — the executor reads them directly.
-- `tasks[].files`: files to create or modify — used for file scope safety checks (parallel phases can't touch same files)
-- `tasks[].acceptance_criteria`: **verifiable** conditions. Each must be testable by running something (a test, a command, a query). "Works correctly" is NOT verifiable. "Returns 200 with JSON matching schema" IS.
-- `tasks[].test_requirements`: specific tests to write — not "write tests" but "test that expired tokens return 401"
+- `tasks[]`: Coherent units of work — see "Task Granularity" principle above. Each is the unit of progress tracking (executor marks complete for resume).
+- `tasks[].id`: Unique within the phase, format `task-NN`
+- `tasks[].description`: WHAT and WHY, never HOW — see "Task Descriptions" principle above. Exclude: property paths, method signatures, implementation code, line numbers.
+- `tasks[].files`: Files to create or modify — used for parallel safety checks (see "Parallel Safety" above)
+- `tasks[].acceptance_criteria`: Verifiable conditions — see "Acceptance Criteria" principle above.
+- `tasks[].test_requirements`: Specific tests to write — not "write tests" but "test that expired tokens return 401"
 
 ## Phase D: Quality Review
 
@@ -300,7 +346,7 @@ Read the prompt template: `.claude/skills/plan/plan-reviewer-prompt.md`
 
 1. Collect each data item listed in **For Orchestrator** from its specified source
 2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions and review dimensions
-3. Spawn a **reviewer subagent** (`.claude/agents/reviewer.md`), passing the filled **For Subagent** section as the prompt — one-shot, evaluates against 10 dimensions, returns findings
+3. Spawn a **plan-reviewer subagent** (`.claude/agents/plan-reviewer.md`), passing the filled **For Subagent** section as the prompt — one-shot, evaluates against 10 dimensions, returns findings
 
 If review has FAILs:
 - Revise the plan files on disk yourself (you have full context from plan design)
@@ -328,47 +374,42 @@ Present the plan to the user after automated review passes:
 3. Tell the user: "Plan approved at `$PLAN_DIR`. Run `/execute` to start implementation."
 4. Use the CLI to display the initial execution state
 
-## Phase F: Post-Planning Reflection
+## Phase F: Post-Planning Knowledge Update
 
-Before handing off to the user, reflect on what was learned during the planning process. **Skip this step entirely if nothing significant was discovered.**
+Merge findings from Phase A and Phase B, present actionable items to the user, and apply approved updates.
 
-### What to look for
+### Step 11: Merge & Present Findings
 
-During Phase B (component analysis) and Phase C (plan creation), you may have discovered things that contradict or are missing from existing documentation:
+1. Collect the **Corrections Log** from Phase A (Step 3) and the **Findings Log** from Phase B (Step 4b)
+2. Merge both tables into a single list, deduplicate entries that reference the same contradiction
+3. **If the merged list is empty ("None" in both logs):** skip Phase F entirely — tell the user "No documentation contradictions found during planning." and proceed to hand off.
+4. **If findings exist:** present each to the user:
 
-- **Component analysis revealed hidden behaviors** not documented in `.analysis.md` → those should already be captured by `/analyze`. But if you noticed something the analyzer missed (e.g., a cross-component interaction only visible when planning the feature), that's a finding.
-- **Requirements contradicted existing architecture** → the plan adapted, but the architectural assumption that led to the contradiction might affect future plans too.
-- **Project overview was inaccurate** → a module described as "handles X" actually also handles Y, or the data flow diagram is wrong.
-- **An assumption about a component turned out wrong during clarification** → the user corrected something that the code alone couldn't reveal (business logic, external constraints).
+For each finding:
+- "During planning, I found: **{finding/correction}**"
+- "Current doc says: {what the doc states} | Reality: {what's actually true}"
+- "Target: **{target doc path}**"
+- "Proposed update: {specific change}"
 
-### What to do
+Ask the user: "Apply these updates? (approve all / select which / skip all)"
 
-Only for **non-trivial findings** that could cause problems in future plans or execution:
+### Step 12: Apply Approved Updates
 
-1. Present each finding to the user:
-   - "During planning, I discovered: {finding}"
-   - "This should be documented in: {target document}"
-   - "Proposed update: {specific content to add/change}"
-2. If user agrees: apply the update to the appropriate document:
-   - Component-specific → update `.analysis.md` Hidden Details table
-   - Pattern-level → create/update rule in `.workflow/rules/planning/` or `code/`
-   - Architecture-level → update `.workflow/project-overview.md`
-3. If user disagrees or finding is trivial: skip it.
+For each approved finding, apply based on target:
 
-**Skip criteria:** Don't surface findings that are:
-- Already captured by the analysis docs (redundant)
-- Trivial or obvious from the code
-- Specific to this one plan with no future relevance
+| Target | Action |
+|--------|--------|
+| `.analysis.md` — behavioral finding | Add row to **Hidden Details** table |
+| `.analysis.md` — rationale finding | Add row to **Design Decisions** table |
+| `.workflow/project-overview.md` | Patch the relevant section |
+| `.workflow/rules/planning/*.md` or `rules/code/*.md` | Create or update rule file |
 
-## Constraints
-- Do NOT delegate plan creation to a subagent — design the plan directly in the main session (you have full context from Phases A-B)
-- Do NOT include implementation code in the plan — tasks describe WHAT, executor decides HOW
-- Do NOT create more than 5 phases unless the feature genuinely requires it
-- Do NOT create phases with more tasks than an executor can complete in one agent session
-- Do NOT put tasks that modify the same files in the same parallel group
-- Do NOT skip the user direction checkpoint (Step 6) — validate direction before writing files
-- Do NOT skip the automated review (Step 8) — the reviewer subagent catches structural issues
-- Do NOT proceed past user review without explicit approval
-- Do NOT write state.json manually — always use the CLI to initialize state
-- Do NOT update plan status manually — always use the CLI to set status
-- Do NOT run CLI commands without `--plan-dir $PLAN_DIR` (when plan files exist on disk)
+For `.analysis.md` patches: also update `last_analyzed` to today's date. Do NOT update `source_hash` (source didn't change — only the analysis doc is being enriched with planning knowledge).
+
+## Questions This Skill Answers
+
+- "/plan [requirements]"
+- "Break this down into tasks"
+- "Create a plan for [feature]"
+- "Plan from this GitHub issue / gh:123"
+- "Plan from jira:PROJ-456"

@@ -1,5 +1,14 @@
 ---
-description: "Execute an approved plan — phase-by-phase with TDD, reviews, state tracking, and doc updates"
+description: |
+  Execute an approved plan phase-by-phase with TDD enforcement, code review,
+  state tracking, knowledge persistence, and doc updates. Handles executor
+  subagent orchestration, analysis gates, discovery/decision capture, and
+  final reconciliation. Use when the user wants to run a plan, start
+  implementation, resume interrupted work, or says "execute this" — even if
+  they don't say "/execute." Also triggers for resuming paused executions
+  and continuing from a specific phase.
+  Do NOT use for planning (use /plan), analyzing components (use /analyze),
+  or updating docs without a plan (use /doc-update with component path).
 ---
 
 # /execute — Execute Plan
@@ -12,6 +21,48 @@ You are executing an approved plan phase-by-phase. Track state, enforce TDD, run
 
 **Input:** `/execute` (uses latest approved plan), `/execute {plan-path}`, or `/execute --resume`
 **Output:** Implemented code, updated state, reviewed and documented
+
+## Expert Vocabulary Payload
+
+**Orchestration:** plan directory ($PLAN_DIR), group-sequential execution (A→B→C), phase-parallel execution, executor subagent (per-phase spawn), reviewer subagent (one-shot), prompt template filling ({placeholders})
+
+**State Tracking:** execution start commit, phase lifecycle (pending→in_progress→completed), task lifecycle (pending→active→completed/failed/skipped), substep tracking (done/next), session log, resume point
+
+**Analysis Gate:** component freshness check (fresh/stale/missing), recursive dependency check (--recursive), progressive loading level (0/1/2), analysis-first principle
+
+**Knowledge Persistence:** discovery persistence (state add-discovery), decision persistence (state add-decision), CLI-based state storage, context-compression-safe, knowledge layer reconciliation (/doc-update)
+
+**Quality Enforcement:** TDD policy (tests first), dimension-based code review (PASS/FAIL), fix round (max 2), regression detection, Playwright smoke check
+
+## Anti-Pattern Watchlist
+
+### Silent $PLAN_DIR Omission
+- **Detection:** CLI commands run without `--plan-dir $PLAN_DIR`. Output targets the wrong plan. State updates appear in an unexpected plan directory.
+- **Resolution:** Every CLI call must include `--plan-dir $PLAN_DIR`. Resolve $PLAN_DIR in Step 1a and use it for ALL subsequent commands without exception.
+
+### Per-Phase Doc Update
+- **Detection:** Invoking `/doc-update` or `/analyze` after each phase completes, instead of waiting for final reconciliation.
+- **Resolution:** Documentation updates happen ONCE in Step 3 after ALL phases complete. Per-phase updates waste tokens, create partial state, and risk inconsistency when later phases change the same components.
+
+### Discovery Loss
+- **Detection:** Executor reports discoveries or decisions in its output, but the orchestrator does not call `state add-discovery` / `state add-decision` to persist them. Knowledge exists only in conversation context where it's vulnerable to compression.
+- **Resolution:** For EVERY row in executor `## Discoveries` and `## Decisions`, immediately call the corresponding CLI persistence command. Verify with `state get-discoveries` if uncertain.
+
+### Infinite Fix Loop
+- **Detection:** More than 2 reviewer fix rounds on the same phase. The orchestrator keeps fixing and re-spawning the reviewer without escalating.
+- **Resolution:** After 2 failed fix rounds, STOP. Present review findings to user. Ask: fix manually, provide guidance, or skip review. Do NOT iterate further.
+
+### Scope Creep
+- **Detection:** Executor or orchestrator modifies files not listed in the plan's `tasks[].files` or `affected_components`. Changes spread beyond the plan's declared scope.
+- **Resolution:** Only modify files within the plan's scope. If a necessary change is out of scope, report it in Discoveries — do not silently extend the plan.
+
+### Skipped Analysis Gate
+- **Detection:** Phase execution begins without running `analysis check --recursive` on affected components. Executor receives stale or missing component intelligence.
+- **Resolution:** Step 2a is mandatory. For every component in `affected_components`, check freshness. Stale/missing → invoke `/analyze` before spawning the executor.
+
+### TDD Bypass
+- **Detection:** Implementation code written without tests, and the task does not fall under a documented TDD exception (UI layout, config, types, prototypes, generated code).
+- **Resolution:** Default is tests first. If skipping, the reason must match a documented exception and be stated in the executor output. "It seemed obvious" is not an exception.
 
 ## Step 1: Load Plan
 
@@ -66,7 +117,8 @@ Read the prompt template: `.claude/skills/execute/executor-prompt.md`
 
 **Parse executor output** per `executor-prompt.md` § "For Orchestrator — Expected Output":
 - Read `## Status` → `**Result**`: if `FAILURE` or `PARTIAL`, check `## Escalations` for blockers before proceeding
-- Extract `## Discoveries` table rows → store for Step 3 reconciliation
+- **Persist discoveries:** For each row in `## Discoveries`, call `state add-discovery {phase_num} {component} "{what}" "{why}" "{risk}" "{test_suggestion}" {category} --plan-dir $PLAN_DIR`
+- **Persist decisions:** For each row in `## Decisions`, call `state add-decision {phase_num} {component} "{decision}" "{reasoning}" "{alternatives}" --plan-dir $PLAN_DIR`
 - Read `## Result` → `**Files Changed**` for the reviewer, `**Tests Written/Passing**` for verification
 
 The executor handles task-level state tracking internally:
@@ -112,7 +164,7 @@ After ALL phases complete.
 
 ### Step 3a: Knowledge Layer Update
 
-Use the Skill tool to invoke `/doc-update` (no arguments). Doc-update auto-detects the active plan via CLI and uses the conversation context — which already contains plan summary, executor discoveries, and phase results — for the full reconciliation.
+Use the Skill tool to invoke `/doc-update` (no arguments). Doc-update auto-detects the active plan via CLI and reads discoveries and decisions from state.json (persisted during Step 2b via CLI commands). Plan summary is read from plan.json.
 
 ### Step 3b: Completion
 
@@ -170,11 +222,21 @@ When a group has multiple phases:
 3. Ask: fix manually, provide guidance, or skip review
 
 ## Constraints
-- Do NOT skip TDD unless the task falls under a documented exception
-- Do NOT proceed past a FAILED review without fixing issues or getting user approval
-- Do NOT modify files outside the plan's scope (no scope creep)
 - Do NOT read or edit state.json directly — always use the CLI
-- Do NOT run any CLI command without `--plan-dir $PLAN_DIR`
-- Do NOT update documentation per-phase — all doc updates happen in Step 3
-- Do NOT skip the final reconciliation step
-- Max 2 fix rounds per review failure — escalate to user after that
+- Do NOT proceed past a FAILED review without fixing issues or getting user approval
+- Do NOT skip the final reconciliation step (Step 3) — even if all phases passed review
+
+## Questions This Skill Answers
+
+- "Execute this plan"
+- "Run the plan"
+- "/execute"
+- "Start implementation"
+- "Resume the execution"
+- "Continue from where we left off"
+- "/execute --resume"
+- "Implement the approved plan"
+- "Start building this"
+- "Run phase 2 of the plan"
+- "Pick up where we stopped"
+- "Execute .workflow/plans/260328-feature/plan.json"

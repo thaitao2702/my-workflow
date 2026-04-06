@@ -1,5 +1,14 @@
 ---
-description: "Extract a repeatable pattern from completed work into a reusable template"
+description: |
+  Extract a repeatable implementation pattern from completed work into a reusable
+  template. Captures steps, files, integration points, variability levels (Fixed/
+  Parametric/Guided), and gotchas. Sources include session context, completed plans,
+  git history, specific files, or manual description. Use when the user wants to
+  capture a pattern, templatize work, save a recipe, or says "we'll do this again"
+  — even if they don't say "/template-create." Also triggers after successful
+  /execute when the pattern appears repeatable.
+  Do NOT use for applying existing templates (use /template-apply), planning
+  (use /plan), or documenting components (use /analyze).
 ---
 
 # /template-create — Create Integration Template
@@ -8,6 +17,38 @@ Extract a repeatable implementation pattern from completed work. Captures steps,
 
 **Input:** `/template-create {name}`, `/template-create` (interactive selection), or invoked by `/plan` or `/execute` with `--from-session`
 **Output:** `.workflow/templates/{name}/` directory with `template.md` and reference files
+
+## Expert Vocabulary Payload
+
+**Pattern Abstraction:** variability classification (Fixed [F] / Parametric [P] / Guided [G]), multi-case reasoning, abstraction level, pattern boundary, what-varies vs. what-stays-fixed
+
+**Template Structure:** template frontmatter (trigger_keywords, variables), reference file annotation ([F]/[P]/[G] markers), integration point mapping, step decomposition, gotchas & lessons learned
+
+**Source Modes:** session context extraction (richest — reasoning + discoveries), disk-based plan recovery (plan.json + state.json), git range extraction (diff-based), file-based pattern capture, manual description
+
+**Quality:** direction review (summary-first), two-pass user validation (direction then detail), surgical edit after feedback, template index update (.workflow/templates/index.md)
+
+## Anti-Pattern Watchlist
+
+### Over-Abstraction
+- **Detection:** Template abstracts everything — all steps are [G], no concrete file paths or patterns survive. A developer reading the template gets a description of categories, not actionable steps.
+- **Resolution:** Apply multi-case reasoning: imagine 3 scenarios using this pattern. What's ALWAYS the same? That's [F]. What changes but follows a formula? That's [P]. Only what genuinely requires creative judgment is [G].
+
+### Under-Abstraction
+- **Detection:** Template is a copy-paste of the specific implementation with no variability markers. Variable names reference the original (e.g., `stripe_webhook_url` instead of `{provider}_webhook_url`). Steps contain hardcoded values.
+- **Resolution:** For each step, ask: "If I were doing this for a different provider/feature/entity, what would change?" Extract those into variables. Mark steps with [F]/[P]/[G].
+
+### Missing Gotchas
+- **Detection:** Template captures the happy path but no lessons learned section, or the gotchas section is empty. Executor discoveries from the original implementation are not transferred.
+- **Resolution:** Check the original execution's discoveries (from state.json or session context). Every discovery that would apply to future instances of this pattern belongs in Gotchas & Lessons Learned.
+
+### Unannotated References
+- **Detection:** Reference files are raw code dumps — full source files copied without [F]/[P]/[G] annotations. No "What to Keep" or "What to Change" sections.
+- **Resolution:** Every reference file must have annotations marking which parts are fixed structure, which are parametric (change by formula), and which need guided adaptation.
+
+### Non-Repeatable Pattern
+- **Detection:** Extracting a template from work that was genuinely one-off — unique business logic, one-time migration, project-specific hack. The template would never be reused.
+- **Resolution:** Before proceeding, ask: "Can you imagine doing this pattern again for a different [entity/provider/feature]?" If the user can't name a second case, the work isn't a template — it's just completed work.
 
 ## Step 0: Determine Mode
 
@@ -255,7 +296,20 @@ snapshot_commit: {git hash}
 ```
 
 ## Constraints
-- Do NOT create templates from work that isn't actually repeatable
-- Do NOT include raw code dumps in reference files — annotate with [F]/[P]/[G] markers
-- Do NOT skip the user review step — templates are a shared artifact
-- Do NOT forget to update the index file
+- Do NOT skip the user review steps (Step 3 direction + Step 4 detail) — templates are shared artifacts
+- Do NOT forget to update `.workflow/templates/index.md` after saving
+
+## Questions This Skill Answers
+
+- "Save this as a template"
+- "We'll do this pattern again"
+- "Extract a template from this work"
+- "/template-create"
+- "Templatize what we just built"
+- "Capture this recipe for reuse"
+- "Create a template from the last execution"
+- "Turn this into a reusable pattern"
+- "Save the payment integration pattern"
+- "Make a template from this branch"
+- "I want to reuse this implementation pattern later"
+- "Template from git history"

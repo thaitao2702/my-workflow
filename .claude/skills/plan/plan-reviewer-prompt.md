@@ -2,40 +2,42 @@
 
 ## For Orchestrator — Data to Collect
 
-Each row names a data item and where to get it. Collect all before constructing the prompt.
+Each row names a data item and where to get it. Collect paths only — the subagent reads content itself.
 
 | Data | Source |
 |------|--------|
 | `$PLAN_DIR` | Resolved in Step 7 |
-| Plan JSON | CLI: read full plan (see reference doc) |
-| Phase JSONs | CLI: read each phase (see reference doc) |
-| Planning rules | `.workflow/rules/planning/*.md` (if any exist) |
-| Component docs | `.analysis.md` files used during planning |
-| Source code | Relevant source files for codebase alignment checks |
-| Project overview | `.workflow/project-overview.md` |
+| Planning rules dir | `.workflow/rules/planning/` — pass directory path, or `None` if it doesn't exist |
+| Component doc paths | Paths of `.analysis.md` files used during planning (from Step 4b) |
+| Source file paths | Paths of relevant source files for codebase alignment (from Step 4a) |
+| Project overview path | `.workflow/project-overview.md` |
 
 ## For Subagent — Prompt to Pass
 
-Replace `{placeholders}` with collected data. Keep purpose descriptions and review dimensions. Pass everything below this line as the subagent prompt.
+Replace `{placeholders}` with collected paths. Keep purpose descriptions and review dimensions. Pass everything below this line as the subagent prompt.
 
 **Plan Directory:** `{$PLAN_DIR}`
-Use the CLI to read plan and phase data. See `.claude/scripts/workflow_cli.reference.md` for commands.
+Read plan and phase data using the CLI. See `.claude/scripts/workflow_cli.reference.md` for commands.
+- Full plan: `plan get --plan-dir {$PLAN_DIR}`
+- Phase list: `plan phases --plan-dir {$PLAN_DIR}`
+- Phase detail: `phase show N --plan-dir {$PLAN_DIR}` for each phase
 
-**Planning Rules:**
-{planning_rules}
-Project-specific planning standards. Flag violations.
+**Planning Rules Directory:** `{planning_rules_dir}`
+Read all `.md` files in this directory. These are project-specific planning standards — flag violations.
+If `None` or directory does not exist: no project-specific planning rules to enforce.
 
 **Component Docs:**
-{component_docs}
-Analysis artifacts from planning. Verify the plan respects these contracts and hidden behaviors.
+{component_doc_paths}
+Read each file listed above. These are analysis artifacts from planning — verify the plan respects their contracts and hidden behaviors.
+If `None`: no component analysis available — note in evidence for analysis-dependent checks.
 
-**Source Code:**
-{source_code}
-Relevant source files. Use for codebase alignment checks (dimension 10).
+**Source Files:**
+{source_file_paths}
+Read each file listed above. Use for codebase alignment checks (dimension 10).
+If `None`: skip codebase alignment verification, mark as PASS with evidence "no source files provided for verification."
 
-**Project Overview:**
-{project_overview}
-Codebase architecture, modules, and conventions. Verify the plan fits existing patterns.
+**Project Overview:** `{project_overview_path}`
+Read this file. Codebase architecture, modules, and conventions — verify the plan fits existing patterns.
 
 ## Review Dimensions
 

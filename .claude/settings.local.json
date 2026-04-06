@@ -14,7 +14,11 @@
       "Bash(python:*)",
       "Bash(/tmp/analysis-test/test.analysis.md:*)",
       "Bash(.workflow/test-fixture/test.analysis.md:*)",
-      "Bash($CLI phase:*)"
+      "Bash($CLI phase:*)",
+      "Bash(xargs grep:*)",
+      "Bash(wc:*)",
+      "Bash(grep:*)",
+      "Bash(ls:*)"
     ]
   }
 }

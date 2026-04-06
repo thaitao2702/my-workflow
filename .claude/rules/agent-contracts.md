@@ -55,8 +55,9 @@ Every prompt template has three sections:
 |-------|----------------|
 | executor | `.claude/skills/execute/executor-prompt.md` |
 | reviewer (code) | `.claude/skills/execute/reviewer-prompt.md` |
-| reviewer (plan) | `.claude/skills/plan/plan-reviewer-prompt.md` |
+| plan-reviewer | `.claude/skills/plan/plan-reviewer-prompt.md` |
 | analyzer | `.claude/skills/analyze/analyzer-prompt.md` |
 | doc-updater | `.claude/skills/doc-update/doc-updater-prompt.md` |
 | template-extractor | `.claude/skills/template-create/template-extractor-prompt.md` |
 | template-applier | `.claude/skills/template-apply/template-applier-prompt.md` |
+| dependency-resolver | `.claude/skills/analyze/dependency-resolver-prompt.md` |

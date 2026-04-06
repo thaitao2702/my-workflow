@@ -90,14 +90,18 @@ Instructions from the user during this execution. These override default assumpt
 **Tests Passing:** {N}
 
 ## Decisions
-| Task | Decision | Reasoning |
-|------|----------|-----------|
-| {task-id} | {what was decided} | {why} |
+| Task | Component | Decision | Reasoning | Alternatives |
+|------|-----------|----------|-----------|--------------|
+| {task-id} | {path} | {what was decided} | {why} | {what else was considered} |
+
+Only report decisions where the reasoning is NOT self-evident from the code. If someone reading the code would naturally ask "why was it done this way instead of the obvious alternative?", that's a decision worth reporting.
 
 ## Discoveries
-| Component | Finding | Category | Impact |
-|-----------|---------|----------|--------|
-| {path} | {description} | hidden_behavior ∣ wrong_assumption ∣ edge_case ∣ integration_gotcha | {consequence} |
+| Component | What | Why | Risk | Test Suggestion | Category |
+|-----------|------|-----|------|-----------------|----------|
+| {path} | {what happened} | {why it happens} | {what could go wrong} | {how to test for it} | hidden_behavior ∣ wrong_assumption ∣ edge_case ∣ integration_gotcha |
+
+Only report non-obvious findings — behaviors where someone reading the public API alone would not expect the behavior. Do not report standard patterns, self-evident code, or trivial implementation details. A good test: "Would a developer modifying this component be surprised by this behavior?"
 
 ## Escalations
 | Type | Task | Description |
@@ -119,5 +123,6 @@ Instructions from the user during this execution. These override default assumpt
 | | `**Tasks Remaining**`: list of task-ids | Know what's left if PARTIAL |
 | `## Result` | `**Files Changed**`, `**Tests Written**`, `**Tests Passing**` | Phase review input, regression check |
 | `## Decisions` | Table: Task, Decision, Reasoning | Context for reviewer, inform doc-update |
-| `## Discoveries` | Table: Component, Finding, Category, Impact | Feed to `/doc-update` reconciliation. Category enum: `hidden_behavior`, `wrong_assumption`, `edge_case`, `integration_gotcha` |
+| `## Discoveries` | Table: Component, What, Why, Risk, Test Suggestion, Category | Persist via CLI `state add-discovery`. Category enum: `hidden_behavior`, `wrong_assumption`, `edge_case`, `integration_gotcha` |
+| `## Decisions` | Table: Task, Component, Decision, Reasoning, Alternatives | Persist via CLI `state add-decision`. Only non-obvious decisions where code doesn't explain the rationale. |
 | `## Escalations` | Table: Type, Task, Description | Handle before proceeding. Type enum: `blocker`, `ambiguity`, `scope_mismatch` |

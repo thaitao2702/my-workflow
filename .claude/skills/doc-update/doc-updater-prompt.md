@@ -18,6 +18,7 @@
 | Entry files | The component's `entry_files` from the existing analysis frontmatter (needed for hash computation) |
 | Output path | Path to the `.analysis.md` file (for MINOR patches) |
 | Discoveries | From manifest row, or "—" if none. Omit if manual invocation. |
+| Decisions | From manifest row, or "—" if none. Omit if manual invocation. |
 
 ## For Subagent — Prompt to Pass
 
@@ -53,6 +54,10 @@ If you classify as MINOR_UPDATE, write the patched analysis to this path.
 {discoveries_1}
 Findings the executor reported about THIS component — hidden behaviors, wrong assumptions, edge cases. Incorporate into the Hidden Details table during MINOR patches, or flag for `/analyze` if MAJOR.
 
+**Decisions:** *(omit if none)*
+{decisions_1}
+Implementation decisions the executor made for THIS component — non-obvious choices with reasoning and alternatives considered. Incorporate into the Design Decisions table during MINOR patches.
+
 ### {component_path_2}
 {... same per-component structure ...}
 
@@ -61,9 +66,9 @@ Findings the executor reported about THIS component — hidden behaviors, wrong 
 For EACH component listed above:
 1. **Classify** as NO_UPDATE, MINOR_UPDATE, or MAJOR_UPDATE (see your agent instructions for criteria)
 2. **Act** based on classification:
-   - NO_UPDATE with no discoveries → no file changes
-   - NO_UPDATE with discoveries → treat as MINOR_UPDATE (experiential knowledge must be recorded)
-   - MINOR_UPDATE → patch the existing analysis at the output path (add table rows, update frontmatter `source_hash` and `last_analyzed`, update `summary` only if component purpose expanded). Also add any executor discoveries to the Hidden Details table.
+   - NO_UPDATE with no discoveries and no decisions → no file changes
+   - NO_UPDATE with discoveries or decisions → treat as MINOR_UPDATE (experiential knowledge must be recorded)
+   - MINOR_UPDATE → patch the existing analysis at the output path (add table rows, update frontmatter `source_hash` and `last_analyzed`, update `summary` only if component purpose expanded). Also add any executor discoveries to the Hidden Details table and any executor decisions to the Design Decisions table.
    - MAJOR_UPDATE → do NOT attempt a full rewrite
 3. **Respond** using the output format below
 
@@ -87,7 +92,7 @@ Follow this format exactly:
 **Actions Taken:**
 | Action | Target Section | Detail |
 |--------|---------------|--------|
-| added_row ∣ updated_field ∣ updated_hash ∣ added_discovery | {section name} | {what changed} |
+| added_row ∣ updated_field ∣ updated_hash ∣ added_discovery ∣ added_decision | {section name} | {what changed} |
 **Escalation:** NONE | ANALYZE_REQUIRED
 **Discoveries to Pass:** [{findings for analyzer}]
 

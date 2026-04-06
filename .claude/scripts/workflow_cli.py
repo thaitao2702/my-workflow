@@ -26,6 +26,10 @@ Usage:
   workflow-cli state pause [--plan-dir DIR]
   workflow-cli state log MESSAGE [--plan-dir DIR]
   workflow-cli state set FIELD VALUE [--plan-dir DIR]
+  workflow-cli state add-discovery PHASE_N COMPONENT WHAT WHY RISK TEST CATEGORY [--plan-dir DIR]
+  workflow-cli state add-decision PHASE_N COMPONENT DECISION REASONING [ALTERNATIVES] [--plan-dir DIR]
+  workflow-cli state get-discoveries [--plan-dir DIR]
+  workflow-cli state get-decisions [--plan-dir DIR]
 
   workflow-cli analysis check COMPONENT [--recursive]
   workflow-cli analysis read COMPONENT [--level 0|1|2]
@@ -497,6 +501,65 @@ def cmd_state_set(plan_dir: Path, field: str, value: str):
     print(json.dumps({field: state[field]}))
 
 
+def cmd_state_add_discovery(plan_dir: Path, phase_num: int, component: str,
+                            what: str, why: str, risk: str, test: str, category: str):
+    """Add a structured discovery entry to state."""
+    valid_categories = ("hidden_behavior", "wrong_assumption", "edge_case", "integration_gotcha")
+    if category not in valid_categories:
+        print(f"Error: category must be one of {valid_categories}", file=sys.stderr)
+        sys.exit(1)
+
+    state = read_json(plan_dir / "state.json")
+    if "discoveries" not in state:
+        state["discoveries"] = []
+
+    state["discoveries"].append({
+        "phase": phase_num,
+        "component": component,
+        "what": what,
+        "why": why,
+        "risk": risk,
+        "test_suggestion": test,
+        "category": category,
+        "timestamp": now_iso(),
+    })
+    _save_state(plan_dir, state)
+    print(json.dumps({"added": "discovery", "phase": phase_num, "component": component}))
+
+
+def cmd_state_add_decision(plan_dir: Path, phase_num: int, component: str,
+                           decision: str, reasoning: str, alternatives: str):
+    """Add a structured decision entry to state."""
+    state = read_json(plan_dir / "state.json")
+    if "decisions" not in state:
+        state["decisions"] = []
+
+    state["decisions"].append({
+        "phase": phase_num,
+        "component": component,
+        "decision": decision,
+        "reasoning": reasoning,
+        "alternatives": alternatives,
+        "timestamp": now_iso(),
+    })
+    _save_state(plan_dir, state)
+    print(json.dumps({"added": "decision", "phase": phase_num, "component": component}))
+
+
+def cmd_state_get_discoveries(plan_dir: Path):
+    """Get all discoveries from state."""
+    state = read_json(plan_dir / "state.json")
+    discoveries = state.get("discoveries", [])
+    print(json.dumps(discoveries, indent=2))
+
+
+def cmd_state_get_decisions(plan_dir: Path):
+    """Get all decisions from state."""
+    state = read_json(plan_dir / "state.json")
+    decisions = state.get("decisions", [])
+    print(json.dumps(decisions, indent=2))
+
+
 # ─── Init & Find ─────────────────────────────────────────────────────────────
 
 def cmd_find_active():
@@ -547,6 +610,8 @@ def cmd_init(plan_dir_str: str):
         "started": None,
         "phases": phases,
         "session_log": [],
+        "discoveries": [],
+        "decisions": [],
     }
 
     write_json(plan_dir / "state.json", state)
@@ -974,6 +1039,22 @@ def main():
             cmd_state_pause(plan_dir)
         elif sub == "log" and len(args) >= 3:
             cmd_state_log(plan_dir, " ".join(args[2:]))
+        elif sub == "add-discovery" and len(args) >= 9:
+            # state add-discovery PHASE_N COMPONENT WHAT WHY RISK TEST CATEGORY
+            cmd_state_add_discovery(
+                plan_dir, int(args[2]), args[3],
+                args[4], args[5], args[6], args[7], args[8]
+            )
+        elif sub == "add-decision" and len(args) >= 7:
+            # state add-decision PHASE_N COMPONENT DECISION REASONING ALTERNATIVES
+            cmd_state_add_decision(
+                plan_dir, int(args[2]), args[3],
+                args[4], args[5], args[6] if len(args) > 6 else ""
+            )
+        elif sub == "get-discoveries":
+            cmd_state_get_discoveries(plan_dir)
+        elif sub == "get-decisions":
+            cmd_state_get_decisions(plan_dir)
         elif sub == "set" and len(args) >= 4:
             cmd_state_set(plan_dir, args[2], " ".join(args[3:]))
         else:

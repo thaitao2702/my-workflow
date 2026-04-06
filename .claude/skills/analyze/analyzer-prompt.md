@@ -20,9 +20,9 @@ Each row names a data item and where to get it. Collect all before constructing 
 | Data | Source |
 |------|--------|
 | Mode | `tree` |
-| Dependency graph | Built in Step 2a — `{component: [direct_dependencies]}` |
-| Analysis order | Topological sort from Step 2b — leaf-to-root sequence |
-| All source code | Collected in Step 2c — labeled by component name and file path |
+| Dependency graph | From dependency-resolver agent output → `## Dependency Graph` table. Format: `{component: [direct_dependencies]}` |
+| Analysis order | Computed by orchestrator — topological sort (leaf → root) of the dependency graph |
+| All source code | Collected by orchestrator after dependency resolution — labeled by component name and file path |
 | Test files | Test files for each component (if they exist) |
 | Project overview | `.workflow/project-overview.md` |
 | Output paths | Co-located `.analysis.md` path for each component in the tree |
@@ -81,6 +81,8 @@ Follow the analysis order strictly. For each component:
 4. **Build forward** — your understanding deepens with each component. By the time you reach the root, you understand the entire stack
 
 **Cross-component insights:** When analyzing a component, you may notice behaviors that only matter because of how a dependency works internally. Capture these in the Hidden Details table — they're the most valuable findings.
+
+**Design decisions:** When you encounter non-obvious architectural choices — where the code does something unexpected and the reasoning isn't self-evident — document them in the Design Decisions table. Examples: choosing polling over events, using a factory instead of direct instantiation for testability, implementing a custom cache instead of using the framework's. If someone would ask "why not do it the obvious way?", it's a design decision worth capturing.
 
 ## Frontmatter Schema
 
@@ -153,6 +155,10 @@ graph LR
 ## Hidden Details & Non-obvious Behaviors
 | What | Why | Risk | Test Suggestion |
 |------|-----|------|----------------|
+
+## Design Decisions
+| Decision | Reasoning | Alternatives Considered | Date |
+|----------|-----------|------------------------|------|
 
 <!-- PART:CONTENT_END -->
 

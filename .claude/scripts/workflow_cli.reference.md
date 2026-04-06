@@ -47,6 +47,15 @@
 | `state skip-task N TASK_ID REASON --plan-dir $PLAN_DIR` | Mark task as skipped | When user approves skipping |
 | `state substep N TASK_ID STEP done\|next --plan-dir $PLAN_DIR` | Track substep progress | Optional fine-grained tracking within a task |
 
+### Orchestrator — Knowledge Persistence
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `state add-discovery PHASE_N COMPONENT WHAT WHY RISK TEST CATEGORY --plan-dir $PLAN_DIR` | Persist an executor discovery | JSON confirmation. Categories: `hidden_behavior`, `wrong_assumption`, `edge_case`, `integration_gotcha` |
+| `state add-decision PHASE_N COMPONENT DECISION REASONING ALTERNATIVES --plan-dir $PLAN_DIR` | Persist an executor decision | JSON confirmation |
+| `state get-discoveries --plan-dir $PLAN_DIR` | Get all persisted discoveries | JSON array of discovery objects |
+| `state get-decisions --plan-dir $PLAN_DIR` | Get all persisted decisions | JSON array of decision objects |
+
 ### Discovery
 
 | Command | Purpose | Output |

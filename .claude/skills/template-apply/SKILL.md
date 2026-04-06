@@ -1,5 +1,13 @@
 ---
-description: "Apply an integration template to accelerate a new implementation"
+description: |
+  Apply an existing integration template to accelerate a new implementation.
+  Collects variable values, resolves Guided sections with user input, and produces
+  structured context that /plan consumes as enriched input. Use when the user wants
+  to reuse a pattern, apply a template, follow a recipe, or says "do the same thing
+  as last time but for [X]" — even if they don't say "/template-apply." Also
+  triggers when /plan discovers a matching template during Step 2.
+  Do NOT use for creating templates (use /template-create), direct implementation
+  (use /execute), or ad-hoc planning without a template (use /plan directly).
 ---
 
 # /template-apply — Apply Integration Template
@@ -8,6 +16,32 @@ Use an existing template to accelerate implementation of a new instance of a rep
 
 **Input:** `/template-apply {name}` or invoked by `/plan` when a template match is found
 **Output:** Structured template context that `/plan` consumes as enriched input
+
+## Expert Vocabulary Payload
+
+**Template Application:** variable collection, Guided section resolution ([G] elaboration), template context document, enriched plan input, pattern adaptation, reference file consultation
+
+**Variable Resolution:** parametric substitution ([P] value replacement), guided elaboration ([G] user-directed adaptation), example-from-original, value prompting, fixed section passthrough ([F])
+
+**Plan Integration:** template-to-plan handoff, quality review pass (via /plan), template discovery match (trigger keywords), plan enrichment, unresolved item resolution
+
+## Anti-Pattern Watchlist
+
+### Skipped Variable Collection
+- **Detection:** Plan input generated without collecting all variable values first. Template context document contains `{unfilled_variable}` placeholders or example values from the original implementation instead of user-provided values.
+- **Resolution:** Every variable in the template frontmatter must have a user-provided value before spawning the applier subagent. No defaults, no guessing from context.
+
+### Plan Bypass
+- **Detection:** Template output used directly for execution (/execute) without going through /plan for quality review and codebase adaptation. Template steps treated as a plan.
+- **Resolution:** Templates are patterns, not plans. They always go through /plan for component intelligence gathering, plan design, and review. The template context document is INPUT to /plan, not a replacement for it.
+
+### Template Modification
+- **Detection:** The template file itself (.workflow/templates/{name}/template.md) is edited during application. Variable values written into the template instead of passed through.
+- **Resolution:** Templates are shared artifacts — never modify them during application. Pass all customization through variables and guided section responses. The template stays generic for the next user.
+
+### Ignored References
+- **Detection:** Reference files in the template's references/ directory are not read or not passed to the applier subagent. The planner receives template steps without the annotated source patterns.
+- **Resolution:** Reference files contain [F]/[P]/[G]-annotated code showing what to keep and what to change. Always read all reference files and include them in the subagent prompt.
 
 ## Step 1: Load Template
 
@@ -53,7 +87,18 @@ Read the prompt template: `.claude/skills/template-apply/template-applier-prompt
    - If invoked directly: use the Skill tool to invoke `/plan` with the `## Template Context Document` as the requirements input.
 
 ## Constraints
-- Do NOT skip variable collection — every variable must have a value before generating output
-- Do NOT bypass `/plan` — templates always go through planning for quality review and adaptation
-- Do NOT ignore reference files — they contain the annotated patterns the planner and executor need
-- Do NOT modify the template itself — it's a shared artifact
+- Do NOT modify the template file itself — it's a shared artifact for all future uses
+
+## Questions This Skill Answers
+
+- "Apply the payment template for PayPal"
+- "Do the same thing we did for Stripe but for [X]"
+- "/template-apply {name}"
+- "Reuse the export template"
+- "Use a template for this"
+- "Apply the [pattern] recipe"
+- "Do we have a template for this?"
+- "Same pattern, different provider"
+- "Follow the integration template"
+- "Apply the CRUD template for orders"
+- "Reuse what we built for users but for products"
