@@ -15,6 +15,7 @@ Each row names a data item and where to get it. Collect all before constructing 
 | Task acceptance criteria | `phase-{N}.json` → `tasks` |
 | Component analysis | Relevant `.analysis.md` files |
 | Code quality rules | `.workflow/rules/code/*.md` + `.claude/rules/quality-criteria.md` |
+| Test execution results | Step 2b.1 output (if test gate ran), or omit section if test gate was skipped |
 
 ## For Subagent — Prompt to Pass
 
@@ -55,6 +56,10 @@ API contracts and hidden behaviors. Verify the implementation respects these int
 **Code Quality Rules:**
 {code_quality_rules}
 Standards to enforce. Flag violations with specific line references.
+
+**Test Execution Results:** *(include only if test execution gate ran)*
+{test_results}
+Independent test run output from Step 2b.1. Use as evidence for the "Test coverage" dimension — passing tests confirm coverage; failures indicate gaps.
 
 ## Review Dimensions
 

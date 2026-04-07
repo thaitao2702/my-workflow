@@ -38,6 +38,8 @@ Usage:
   workflow-cli find-active
   workflow-cli init PLAN_DIR
   workflow-cli hash FILE [FILE...]
+
+  workflow-cli config get [FIELD]
 """
 
 import hashlib
@@ -924,6 +926,29 @@ def cmd_hash(files: list[str]):
         sys.exit(1)
 
 
+# ─── Config ──────────────────────────────────────────────────────────────────
+
+def cmd_config_get(field: str | None):
+    """Get config data from .workflow/config.json."""
+    root = find_project_root()
+    config_path = root / ".workflow" / "config.json"
+    if not config_path.exists():
+        if field:
+            print("null")
+        else:
+            print("{}")
+        return
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    if field:
+        val = config.get(field)
+        if val is None:
+            print("null")
+        else:
+            print(json.dumps(val))
+    else:
+        print(json.dumps(config, indent=2))
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 def main():
@@ -957,6 +982,14 @@ def main():
 
     if cmd == "hash" and len(args) >= 2:
         cmd_hash(args[1:])
+        return
+
+    if cmd == "config":
+        if sub == "get":
+            cmd_config_get(args[2] if len(args) > 2 else None)
+        else:
+            print(f"Unknown config command: {sub}", file=sys.stderr)
+            sys.exit(1)
         return
 
     if cmd == "analysis":

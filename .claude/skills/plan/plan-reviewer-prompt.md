@@ -53,6 +53,7 @@ Evaluate against all 10 dimensions:
 8. **Test coverage mapping** — every behavior has a corresponding test requirement
 9. **Consistency** — no conflicting instructions across phases
 10. **Codebase alignment** — plan respects existing patterns from project overview + component docs
+11. **Acceptance spec coverage** — every requirement in scope.in_scope traces to at least one acceptance_spec across all phases, every spec has a concrete verify_by that enables unambiguous PASS/FAIL, verify_by scenarios are framework-agnostic, and traces_to references valid task-ids
 
 ## Output Format
 
@@ -76,7 +77,7 @@ Follow this format exactly:
 | ambiguous_criteria ∣ conflicting_rules ∣ unclassifiable | {dimension name} | {details} |
 ```
 
-- **Status.Result:** `PASS` = all 10 dimensions pass. `FAIL` = one or more dimensions fail.
+- **Status.Result:** `PASS` = all 11 dimensions pass. `FAIL` = one or more dimensions fail.
 - **Dimensions:** One subsection per dimension, in order. Every dimension must be evaluated — no skipping.
 - **Fix Required:** Describe what needs fixing. Use "—" only if PASS.
 - **Escalations:** Issues with the review criteria themselves, not with the plan. Write "None" if no criteria issues.

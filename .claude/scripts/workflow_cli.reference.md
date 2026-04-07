@@ -77,6 +77,15 @@
 |---------|---------|--------|
 | `hash FILE [FILE...]` | SHA-256 content hash of file(s) | Hex digest. Multiple files are sorted by path and concatenated before hashing. |
 
+### Configuration
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `config get` | Full config JSON | JSON object from `.workflow/config.json`, or `{}` if file missing |
+| `config get FIELD` | Single config field | JSON value, or `null` if field or file missing |
+
+Config fields: `test_command` (string — test runner command), `test_command_timeout` (ms, default 120000), `playwright_check` (boolean), `acceptance_mode` (`"auto"` | `"test"` | `"reason"`, default `"auto"`).
+
 ## Status Lifecycles
 
 **Plan:** `draft` → `reviewed` → `approved` → `executing` → `completed`

@@ -208,6 +208,19 @@ Test: "If a new developer reads the summary + a task description, can they imple
 #### Acceptance Criteria
 Every criterion must be **verifiable by running something** — a test, a command, a query. "Works correctly" is NOT verifiable. "GET /api/reports returns 200 with JSON array matching ReportSchema" IS. If you can't write a verifiable criterion, the task isn't well-defined enough.
 
+#### Acceptance Specifications
+Acceptance specifications (`acceptance_specs`) are **phase-level** verification targets consumed by an independent verifier after execution — distinct from task-level `acceptance_criteria`:
+
+| Concept | Level | Consumer | Purpose |
+|---------|-------|----------|---------|
+| `acceptance_criteria` | Per-task | Executor | Definition-of-done during implementation |
+| `acceptance_specs` | Per-phase | Acceptance verifier (post-execution) | Independent behavioral verification |
+
+- Specs are derived from **requirements**, not from tasks — a spec may span multiple tasks via `traces_to`
+- `verify_by` must be concrete enough for either a test author (write + run test code) or a reasoning agent (read code and trace behavior) to determine PASS/FAIL unambiguously
+- Every requirement in `scope.in_scope` should trace to at least one `acceptance_spec` across all phases
+- Specs verify **functional correctness** (does it work?), not code quality (that's the reviewer's job)
+
 #### Using Component Intelligence
 Hidden details in analysis docs often reveal constraints that change the plan. If a component silently clamps date ranges to 90 days, your "export all data" feature needs pagination. Reference specific findings in `component_intelligence` so reviewers understand why you made certain choices.
 
@@ -256,7 +269,8 @@ Direction approved — now materialize the full plan to disk.
 
 2. Write `plan.json` with `"status": "draft"` following the plan file format below
 3. Write `phase-{N}.json` for each phase following the phase file format below
-4. Use the CLI to read back the plan and verify files written correctly
+4. **Write acceptance specs:** For each phase, derive `acceptance_specs` that verify the phase delivers its requirements. Review each phase's tasks against the overall `scope.in_scope` requirements. Every requirement should trace to at least one spec across all phases. Write specs into the phase JSON files. Specs should cover functional correctness — not code quality (that's the reviewer's job).
+5. Use the CLI to read back the plan and verify files written correctly
 
 ### Plan File Format: `plan.json`
 
@@ -322,6 +336,15 @@ Direction approved — now materialize the full plan to disk.
         "Cross-account select returns empty"
       ]
     }
+  ],
+  "acceptance_specs": [
+    {
+      "id": "spec-01",
+      "description": "Account isolation enforced at database level",
+      "traces_to": ["task-01"],
+      "verification_type": "functional",
+      "verify_by": "INSERT user under account A, SELECT under account B returns empty result set"
+    }
   ]
 }
 ```
@@ -337,6 +360,12 @@ Direction approved — now materialize the full plan to disk.
 - `tasks[].files`: Files to create or modify — used for parallel safety checks (see "Parallel Safety" above)
 - `tasks[].acceptance_criteria`: Verifiable conditions — see "Acceptance Criteria" principle above.
 - `tasks[].test_requirements`: Specific tests to write — not "write tests" but "test that expired tokens return 401"
+- `acceptance_specs[]`: Phase-level verification targets for the independent acceptance verifier — see "Acceptance Specifications" principle above.
+- `acceptance_specs[].id`: Unique within phase, format `spec-NN`
+- `acceptance_specs[].description`: What behavior or property must hold. One sentence.
+- `acceptance_specs[].traces_to`: Array of task-ids whose combined implementation satisfies this spec. For requirement traceability.
+- `acceptance_specs[].verification_type`: `functional` (run + check output) | `structural` (code pattern must exist) | `behavioral` (system exhibits behavior under scenario)
+- `acceptance_specs[].verify_by`: Concrete verification scenario. Must enable unambiguous PASS/FAIL determination. Framework-agnostic — no test framework syntax. In test mode this guides what test code to write; in reason mode this is the reasoning target.
 
 ## Phase D: Quality Review
 
@@ -346,7 +375,7 @@ Read the prompt template: `.claude/skills/plan/plan-reviewer-prompt.md`
 
 1. Collect each data item listed in **For Orchestrator** from its specified source
 2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions and review dimensions
-3. Spawn a **plan-reviewer subagent** (`.claude/agents/plan-reviewer.md`), passing the filled **For Subagent** section as the prompt — one-shot, evaluates against 10 dimensions, returns findings
+3. Spawn a **plan-reviewer subagent** (`.claude/agents/plan-reviewer.md`), passing the filled **For Subagent** section as the prompt — one-shot, evaluates against 11 dimensions, returns findings
 
 If review has FAILs:
 - Revise the plan files on disk yourself (you have full context from plan design)

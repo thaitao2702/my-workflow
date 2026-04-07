@@ -32,7 +32,7 @@ You are executing an approved plan phase-by-phase. Track state, enforce TDD, run
 
 **Knowledge Persistence:** discovery persistence (state add-discovery), decision persistence (state add-decision), CLI-based state storage, context-compression-safe, knowledge layer reconciliation (/doc-update)
 
-**Quality Enforcement:** TDD policy (tests first), dimension-based code review (PASS/FAIL), fix round (max 2), regression detection, Playwright smoke check
+**Quality Enforcement:** TDD policy (tests first), dimension-based code review (PASS/FAIL), fix round (max 2), regression detection, Playwright smoke check, test execution gate (independent test run, conditional on config), acceptance verification (spec-based independent check, test mode vs reason mode), cross-phase integration check
 
 ## Anti-Pattern Watchlist
 
@@ -63,6 +63,10 @@ You are executing an approved plan phase-by-phase. Track state, enforce TDD, run
 ### TDD Bypass
 - **Detection:** Implementation code written without tests, and the task does not fall under a documented TDD exception (UI layout, config, types, prototypes, generated code).
 - **Resolution:** Default is tests first. If skipping, the reason must match a documented exception and be stated in the executor output. "It seemed obvious" is not an exception.
+
+### Skipped Acceptance Verification
+- **Detection:** Phase has non-empty `acceptance_specs` but Step 2c.1 is not executed. Or verification fails and orchestrator proceeds without user approval.
+- **Resolution:** If `acceptance_specs` exist, Step 2c.1 is mandatory. Failures must be presented to the user — do not silently skip or auto-approve.
 
 ## Step 1: Load Plan
 
@@ -128,6 +132,24 @@ The executor handles task-level state tracking internally:
 
 **Why per-phase, not per-task:** Each subagent spawn costs ~4000 tokens of context. A 4-task phase costs 16,000 tokens with per-task spawning vs 4,000 tokens per-phase. The executor also builds naturally on its own work — no re-reading files it just created.
 
+#### Step 2b.1: Test Execution Gate (conditional)
+
+Only if `.workflow/config.json` exists AND has a non-null `test_command` field.
+
+1. Read test command: use CLI `config get test_command`
+2. Read timeout: use CLI `config get test_command_timeout` (default 120000 if null)
+3. Run the test command via Bash with the specified timeout
+4. Parse result:
+   - **Exit 0** → tests pass. Log: `state log "Test gate PASS" --plan-dir $PLAN_DIR`. Proceed to Step 2c. Save test output for the reviewer (Step 2c).
+   - **Exit non-zero** → tests fail.
+     - Present test output to user
+     - Ask: **fix** (fix failures yourself, re-run, max 2 fix rounds), **skip** (proceed to review anyway), or **abort**
+     - Log: `state log "Test gate {PASS|FAIL|SKIPPED} — {summary}" --plan-dir $PLAN_DIR`
+
+If `.workflow/config.json` is missing or has no `test_command`: skip this step entirely. Log: `state log "Test gate skipped — no test_command configured" --plan-dir $PLAN_DIR`
+
+**Why this step exists:** The executor self-reports test counts but independent test execution catches false reports before expensive code review.
+
 #### Step 2c: Phase Review
 
 After the executor returns, read the prompt template: `.claude/skills/execute/reviewer-prompt.md`
@@ -144,6 +166,36 @@ If **FAIL**: fix the issues yourself (you have full plan context from Step 1), t
 
 Present review to user for approval before proceeding.
 
+#### Step 2c.1: Acceptance Verification (conditional)
+
+Only if the phase has non-empty `acceptance_specs` in `phase-{N}.json`.
+
+1. **Determine mode:**
+   - Read `.workflow/config.json` → `acceptance_mode` via CLI `config get acceptance_mode` (default: `"auto"`)
+   - `auto`: use `test` when `test_command` exists, `reason` otherwise
+   - `test` or `reason`: use that mode directly
+
+2. Read the prompt template: `.claude/skills/execute/acceptance-verifier-prompt.md`
+3. Collect each data item listed in **For Orchestrator** from its specified source
+4. Fill `{placeholders}` in **For Subagent** with collected data
+5. Spawn an **acceptance-verifier subagent** (`.claude/agents/acceptance-verifier.md`), passing the filled **For Subagent** section as the prompt — one-shot, fresh spawn
+
+**Parse output** per `acceptance-verifier-prompt.md` § "For Orchestrator — Expected Output":
+- Read `## Status` → `**Result**`: `PASS`, `FAIL`, or `PARTIAL`
+- If `FAIL` or `PARTIAL`: read `**Failed Specs**` for the list, then extract each failed spec's `**Gap**` from `## Specs`
+
+**If PASS:** Log and proceed to Step 2d. `state log "Acceptance verification PASS — {passed}/{total} specs" --plan-dir $PLAN_DIR`
+
+**If FAIL or PARTIAL:**
+- Present failed specs with evidence and gaps to user
+- Ask: **fix** (fix the gaps yourself based on gap descriptions, then re-spawn verifier, max 2 fix rounds), **skip** (proceed anyway), or **abort**
+- If fix: apply fixes, re-spawn acceptance verifier. After 2 failed rounds, present to user and ask how to proceed.
+- Log: `state log "Acceptance verification {PASS|FAIL|SKIPPED} — {passed}/{total}" --plan-dir $PLAN_DIR`
+
+If phase has no `acceptance_specs` or the array is empty: skip this step. Log: `state log "Acceptance verification skipped — no specs" --plan-dir $PLAN_DIR`
+
+**Why this step exists:** The executor and code reviewer share correlated blind spots (both are LLM static analysis). Acceptance verification independently checks whether the implementation actually delivers the requirements using structured specifications authored during planning.
+
 #### Step 2d: Playwright Check (conditional)
 
 Only if the phase has `affected_components` that include UI components AND `.workflow/config.json` has `playwright_check: true`:
@@ -158,9 +210,27 @@ Only if the phase has `affected_components` that include UI components AND `.wor
 
 **Note:** Documentation updates are NOT done per-phase. They happen once in the final reconciliation (Step 3) after all phases complete.
 
+## Step 2.5: Cross-Phase Integration Check (conditional)
+
+After ALL phases in ALL groups complete, before Step 3.
+
+Only if (a) more than one phase was executed AND (b) `.workflow/config.json` has a non-null `test_command` (via CLI `config get test_command`):
+
+1. Run the test command via Bash
+2. **Exit 0** → integration check passes. Log: `state log "Integration check PASS" --plan-dir $PLAN_DIR`. Proceed to Step 3.
+3. **Exit non-zero** → cross-phase regression detected.
+   - Identify which tests fail from the output
+   - Present to user: "Cross-phase integration check failed. These tests may have been broken by interactions between phases."
+   - Ask: **fix** (fix regressions, re-run), **skip** (proceed to reconciliation), or **abort**
+   - Log outcome: `state log "Integration check {PASS|FAIL|SKIPPED}" --plan-dir $PLAN_DIR`
+
+If single phase or no `test_command`: skip. Log: `state log "Integration check skipped — {reason}" --plan-dir $PLAN_DIR`
+
+**Why this step exists:** Per-phase tests run in isolation. Phase 3 may break Phase 1's tests through shared dependencies, config changes, or type modifications. This catches regressions that per-phase testing cannot.
+
 ## Step 3: Final Reconciliation
 
-After ALL phases complete.
+After ALL phases complete (and integration check passes or is skipped).
 
 ### Step 3a: Knowledge Layer Update
 

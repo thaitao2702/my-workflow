@@ -61,3 +61,4 @@ Every prompt template has three sections:
 | template-extractor | `.claude/skills/template-create/template-extractor-prompt.md` |
 | template-applier | `.claude/skills/template-apply/template-applier-prompt.md` |
 | dependency-resolver | `.claude/skills/analyze/dependency-resolver-prompt.md` |
+| acceptance-verifier | `.claude/skills/execute/acceptance-verifier-prompt.md` |

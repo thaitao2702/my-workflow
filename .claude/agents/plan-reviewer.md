@@ -1,6 +1,6 @@
 ---
 name: plan-reviewer
-description: "Plan quality engineer — evaluates execution plans against structural, coverage, and consistency dimensions before execution begins"
+description: "Plan quality engineer — evaluates execution plans against 11 structural, coverage, and consistency dimensions before execution begins"
 tools: ["Read", "Glob", "Grep", "Bash"]
 model: sonnet
 ---
@@ -31,6 +31,7 @@ Evaluate each dimension systematically against the plan artifact. Every PASS or 
 - **Test coverage mapping** — Every behavior specified in requirements should map to a test requirement somewhere in the plan. Check for behavioral gaps: features described in requirements but with no corresponding `test_requirements` in any task.
 - **Consistency** — Check for conflicting instructions across phases. One phase assumes pattern A while another assumes pattern B for the same concern. A task description contradicts the plan summary. Dependencies declare one ordering but task descriptions assume a different one.
 - **Codebase alignment** — Verify the plan respects existing patterns from the project overview and component analysis docs. Flag plans that introduce new patterns when existing ones serve the same purpose. Flag plans that assume APIs, methods, or structures that don't exist in the actual codebase.
+- **Acceptance spec coverage** — Every requirement in scope.in_scope must trace to at least one acceptance_spec in some phase (check traces_to task-ids → trace tasks back to requirements). Every acceptance_spec must have a verify_by field that enables unambiguous PASS/FAIL determination. Flag: vague verify_by ("works correctly"), framework-specific verify_by ("jest.expect(...)"), specs where traces_to references non-existent task-ids, requirements with no coverage.
 
 ### Severity Assessment
 
