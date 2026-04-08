@@ -14,6 +14,7 @@
 | `plan phases --plan-dir $PLAN_DIR` | List all phases | One JSON object per line: `{"phase": N, "name": "...", "group": "A", "status": "..."}` |
 | `plan show --plan-dir $PLAN_DIR` | Human-readable plan summary | Formatted text with phase list, task counts, status |
 | `plan set-status STATUS --plan-dir $PLAN_DIR` | Update plan status | Sets status: `draft` → `reviewed` → `approved` → `executing` → `completed` |
+| `plan review-dump --plan-dir $PLAN_DIR` | All plan data in AI-agent-friendly format | Plan overview + all phases inline + cross-reference tables (file ownership, requirement trace, acceptance spec trace) + planning rules. Single call replaces `plan get` + `plan phases` + N × `phase show`. |
 
 ### Orchestrator — Phase Reading
 
@@ -70,6 +71,32 @@
 | `analysis check COMPONENT [--recursive]` | Check if analysis doc is fresh, stale, or missing | JSON: `{"status": "fresh\|stale\|missing", "analysis_path": "...", "reason?": "...", "changed_deps?": [...]}` |
 | `analysis read COMPONENT [--level 0\|1\|2]` | Read analysis doc at progressive loading level | Extracted content. Level 0: frontmatter, Level 1 (default): frontmatter + CONTENT, Level 2: full |
 | `analysis list DIR` | Find all `.analysis.md` files recursively in a directory | One relative path per line |
+
+### Batch Operations
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `batch --commands 'JSON_ARRAY'` | Execute multiple CLI sub-commands in one call | Sectioned output: `══ [N/total] {command} ══` per result |
+| `read FILE [FILE:start-end ...]` | Read one or more files | Sectioned: `══ FILE: {path} ══` per file. Handles binary detection, missing files. |
+| `grep [--path P] [--type T] [--context N] PATTERN` | Search for regex pattern in files | ripgrep output, or `(no matches)` if none found |
+
+**When to use batch:** When you need results from 3+ independent commands and know all inputs upfront. Each element in the JSON array is a sub-command string using the same syntax as standalone CLI calls.
+
+**Batch output format:**
+```
+══ [1/N] {command_string} ══
+{command output}
+
+══ [2/N] {command_string} ══
+{command output}
+```
+
+Errors per sub-command show `ERROR: {message}` without aborting the batch.
+
+**Example:**
+```
+batch --commands '["read src/foo.ts src/bar.ts", "grep --path src/ --type ts class AuthService", "analysis check src/services/auth.ts"]'
+```
 
 ### Utility
 

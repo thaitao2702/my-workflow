@@ -236,6 +236,8 @@ Design the plan using:
 - Planning principles above
 - JSON format specs defined in Step 7 (plan.json and phase-{N}.json structures)
 
+**While designing, keep the Step 7 generation constraints in mind:** task descriptions must avoid implementation details (method names, property paths, CLI flags), acceptance criteria must be verifiable by running something, and every `scope.in_scope` requirement needs acceptance spec coverage across phases.
+
 Produce a **brief direction summary** (10-15 lines):
 - Plan name and scope
 - Number of phases and total tasks
@@ -261,6 +263,10 @@ The user understands the requirements better than any agent — catching directi
 ### Step 7: Write Plan Files
 
 Direction approved — now materialize the full plan to disk.
+
+#### Generation Constraints
+
+**Read `.workflow/rules/planning/generation-constraints.md` before writing steps 2-4.** Apply its rules while generating task descriptions, acceptance criteria, and acceptance specs. Violating them causes reviewer failures and wastes a full review round.
 
 1. Create directory: `.workflow/plans/{YYMMDD}-{slug}/`
    - `{YYMMDD}` = today's date (e.g., `260328`)
@@ -375,7 +381,7 @@ Read the prompt template: `.claude/skills/plan/plan-reviewer-prompt.md`
 
 1. Collect each data item listed in **For Orchestrator** from its specified source
 2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions and review dimensions
-3. Spawn a **plan-reviewer subagent** (`.claude/agents/plan-reviewer.md`), passing the filled **For Subagent** section as the prompt — one-shot, evaluates against 11 dimensions, returns findings
+3. Spawn a **plan-reviewer subagent** (`.claude/agents/plan-reviewer.md`) **in foreground**, passing the filled **For Subagent** section as the prompt — one-shot, evaluates against 11 dimensions, returns findings. **Run in foreground** (not background) unless you have independent work to do in parallel during review — foreground gives progress visibility and avoids redundant launches if the agent appears stalled.
 
 If review has FAILs:
 - Revise the plan files on disk yourself (you have full context from plan design)

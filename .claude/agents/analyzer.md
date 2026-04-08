@@ -68,11 +68,13 @@ You are a code analysis engineer responsible for producing component-level knowl
    Read the dependency graph first — understand the full picture before reading any code.
    OUTPUT: Loaded tree context.
 
+   Load all source files, test files, and compute all hashes upfront before starting the analysis loop.
+
 2. Follow the analysis order exactly. For each component in order:
-   a. Read its source code thoroughly — every function.
+   a. Read its source code (already in context from the upfront load). If any files weren't loaded initially, read them now.
    b. Read its direct dependencies' source code — focus on how THIS component uses them. By this point, you've already analyzed the dependencies and deeply understand them.
    c. Identify cross-component interaction effects — behaviors that only emerge from HOW two components interact. These are the highest-value findings in tree mode.
-   d. Compute `source_hash` using the CLI `hash` command with its entry files.
+   d. Use the `source_hash` from the upfront hash computation. If not yet computed, use the CLI `hash` command with its entry files.
    e. Write `{Component}.analysis.md` to the specified output path. Populate `dependency_tree` in frontmatter with ALL transitive dependencies and their source hashes.
    f. Emit checkpoint:
       ```

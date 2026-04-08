@@ -2,30 +2,31 @@
 
 ## For Orchestrator — Data to Collect
 
-Each row names a data item and where to get it. Collect all before constructing the prompt.
+Each row names a `{placeholder}` and where to get its value. Collect all before constructing the prompt.
 
 ### Single Component (no recursion)
 
-| Data | Source |
-|------|--------|
-| Mode | `single` |
-| Component source code | All files in the module, or the single entry file |
-| Test files | Test files for this component (if they exist) |
-| Existing analysis | The existing `.analysis.md` file (if update mode — source changed but doc exists) |
-| Project overview | `.workflow/project-overview.md` |
-| Output path | Co-located `.analysis.md` path determined in Step 0 |
+| Placeholder | Source |
+|-------------|--------|
+| `{mode}` | `single` |
+| `{source_file_paths}` | Paths to all files in the module, or the single entry file |
+| `{test_file_paths}` | Paths to test files for this component (if they exist) |
+| `{existing_analysis_path}` | Path to the existing `.analysis.md` file (if update mode) |
+| `{project_overview_path}` | `.workflow/project-overview.md` — pass path only |
+| `{output_path}` | Co-located `.analysis.md` path determined in Step 0 |
 
 ### Dependency Tree (recursive)
 
-| Data | Source |
-|------|--------|
-| Mode | `tree` |
-| Dependency graph | From dependency-resolver agent output → `## Dependency Graph` table. Format: `{component: [direct_dependencies]}` |
-| Analysis order | Computed by orchestrator — topological sort (leaf → root) of the dependency graph |
-| All source code | Collected by orchestrator after dependency resolution — labeled by component name and file path |
-| Test files | Test files for each component (if they exist) |
-| Project overview | `.workflow/project-overview.md` |
-| Output paths | Co-located `.analysis.md` path for each component in the tree |
+| Placeholder | Source |
+|-------------|--------|
+| `{mode}` | `tree` |
+| `{dependency_graph}` | From dependency-resolver agent output → `## Dependency Graph` table. Format: `{component: [direct_dependencies]}` |
+| `{analysis_order}` | Computed by orchestrator — topological sort (leaf → root) of the dependency graph |
+| `{source_file_paths}` | Paths to all source files, labeled by component name — subagent loads them |
+| `{test_file_paths}` | Paths to test files for each component (if they exist) |
+| `{project_overview_path}` | `.workflow/project-overview.md` — pass path only |
+| `{output_paths}` | Co-located `.analysis.md` path for each component in the tree |
+
 
 ## For Subagent — Prompt to Pass
 
@@ -46,25 +47,22 @@ Analyze components in this exact order (leaf → root). Write each `.analysis.md
 {output_paths}
 Map of component name → `.analysis.md` file path. Write each analysis to its specified path.
 
-**Source Code:**
-{source_code}
-For single mode: one component's source files.
-For tree mode: ALL components' source files, labeled by component name and file path. Read the dependency graph first to understand how they connect, then read code in analysis order.
+**Context Files (load before analyzing):**
+Load all these files upfront — issue all Read calls in parallel within a single response, or use the CLI `batch` command for reads and hashes combined.
 
-**Existing Analysis:** *(single mode, update only — omit if writing from scratch)*
-{existing_analysis}
-The current `.analysis.md` content. Preserve structure and any still-accurate content. Update what changed.
+| Category | Paths |
+|----------|-------|
+| Source files | {source_file_paths} |
+| Test files | {test_file_paths} |
+| Existing analysis *(update only)* | {existing_analysis_path} |
+| Project overview | {project_overview_path} |
 
-**Test Files:**
-{test_files}
-Tests reveal intended behavior and edge cases. Use to populate the Tests table and validate your understanding.
-
-**Project Overview:**
-{project_overview}
-Codebase architecture and conventions. Ensure your analysis fits the project's module structure and naming.
+For single mode: load one component's source files.
+For tree mode: load ALL components' source files. Read the dependency graph first to understand how they connect, then read code in analysis order.
+After loading, reference from context. Only make additional reads for files discovered during analysis.
 
 **Output Path:** *(single mode only)*
-`{output_path}`
+{output_path}
 Write the analysis file to this exact path.
 
 ## Analysis Instructions

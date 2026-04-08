@@ -6,9 +6,17 @@ All agent interactions (main agent ↔ subagent) follow typed contracts defined 
 
 When spawning any subagent:
 1. Read its prompt template (see reference table below)
-2. Collect all data items listed in **"For Orchestrator — Data to Collect"**
-3. Fill `{placeholders}` in **"For Subagent — Prompt to Pass"**
+2. Collect all data items listed in **"For Orchestrator — Data to Collect"** — the Data column uses the exact `{placeholder}` name from the subagent prompt
+3. Fill `{placeholders}` in **"For Subagent — Prompt to Pass"** with the collected values
 4. Pass the filled "For Subagent" section as the agent's prompt
+
+**Placeholder format conventions — all values are raw strings:**
+- **Single path:** `path/to/file.md` — raw string, no backtick wrapping
+- **Path list:** `path/one.md, path/two.md, path/three.md` — comma-separated raw strings
+- **Content (inline):** raw text, no wrapping — for computed values only
+- **None/empty:** the literal string `None`
+
+**Template rule:** Placeholders in the "For Subagent" section must be bare — no surrounding backticks in the template markup. Values are raw; templates position them.
 
 ### Parsing Agent Output
 
@@ -48,6 +56,14 @@ Every prompt template has three sections:
 | **For Orchestrator — Data to Collect** | Input contract: what data to gather and from where | Orchestrator (SKILL.md) |
 | **For Subagent — Prompt to Pass** | The prompt sent to the agent, including output format | Agent |
 | **For Orchestrator — Expected Output** | Output parsing guide: field names, types, enums | Orchestrator (SKILL.md) |
+
+### Efficient Data Loading (All Agents)
+
+**Parallel tool calls.** When you need 3+ independent pieces of information (file reads, grep searches, etc.), issue all independent tool calls in parallel within a single response — not one at a time. This applies to native tools (Read, Grep, Glob) and CLI commands alike.
+
+**CLI `batch` command.** For CLI-specific operations (read, hash, analysis check, grep), combine 3+ calls into one `batch` invocation. See `.claude/scripts/workflow_cli.reference.md` → "Batch Operations" for syntax.
+
+**Paths, not content.** Prompt templates pass file paths to subagents — subagents load files themselves. Only computed values that don't exist on disk (git diffs, plan JSON extracts, session context, user directives) are passed as inline content in the prompt. This prevents token doubling.
 
 ### Agent → Prompt Template Reference
 

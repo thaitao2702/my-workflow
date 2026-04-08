@@ -2,20 +2,20 @@
 
 ## For Orchestrator — Data to Collect
 
-Each row names a data item and where to get it. Collect all before constructing the prompt.
+Each row names a `{placeholder}` and where to get its value. Collect all before constructing the prompt.
 
-| Data | Source |
-|------|--------|
-| Code changes | `git diff` for this phase |
-| Mission briefing | `plan.json` → `summary` |
-| Scope | `plan.json` → `scope` |
-| Component intelligence | `plan.json` → `component_intelligence` |
-| Risks & mitigations | `plan.json` → `risks` |
-| Phase goal | `phase-{N}.json` → `goal` |
-| Task acceptance criteria | `phase-{N}.json` → `tasks` |
-| Component analysis | Relevant `.analysis.md` files |
-| Code quality rules | `.workflow/rules/code/*.md` + `.claude/rules/quality-criteria.md` |
-| Test execution results | Step 2b.1 output (if test gate ran), or omit section if test gate was skipped |
+| Placeholder | Source |
+|-------------|--------|
+| `{code_changes}` | `git diff` for this phase |
+| `{mission_briefing}` | `plan.json` → `summary` |
+| `{scope}` | `plan.json` → `scope` |
+| `{component_intelligence}` | `plan.json` → `component_intelligence` |
+| `{risks}` | `plan.json` → `risks` |
+| `{phase_goal}` | `phase-{N}.json` → `goal` |
+| `{task_acceptance_criteria}` | `phase-{N}.json` → `tasks` |
+| `{component_analysis_paths}` | Paths to relevant `.analysis.md` files |
+| `{code_quality_rule_paths}` | Paths to `.workflow/rules/code/*.md` + `.claude/rules/quality-criteria.md` |
+| `{test_results}` | Step 2b.1 output (if test gate ran), or omit section if skipped |
 
 ## For Subagent — Prompt to Pass
 
@@ -49,13 +49,15 @@ What this phase should achieve. Evaluate whether the implementation fulfills it.
 {task_acceptance_criteria}
 Per-task verifiable conditions. Each must be satisfied — not aspirational, mandatory.
 
-**Component Analysis:**
-{component_analysis}
-API contracts and hidden behaviors. Verify the implementation respects these interfaces.
+**Context Files (load before reviewing):**
+Load all these files upfront — issue all Read calls in parallel within a single response.
 
-**Code Quality Rules:**
-{code_quality_rules}
-Standards to enforce. Flag violations with specific line references.
+| Category | Paths |
+|----------|-------|
+| Component analysis | {component_analysis_paths} |
+| Code quality rules | {code_quality_rule_paths} |
+
+After loading, reference from context for your review.
 
 **Test Execution Results:** *(include only if test execution gate ran)*
 {test_results}

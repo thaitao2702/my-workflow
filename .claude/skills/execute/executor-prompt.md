@@ -2,29 +2,29 @@
 
 ## For Orchestrator — Data to Collect
 
-Each row names a data item and where to get it. Collect all before constructing the prompt.
+Each row names a `{placeholder}` and where to get its value. Collect all before constructing the prompt.
 
-| Data | Source |
-|------|--------|
-| `$PLAN_DIR` | Resolved in Step 1a |
-| Phase number | Current phase index |
-| Mission briefing | `plan.json` → `summary` |
-| Component intelligence | `plan.json` → `component_intelligence` |
-| Risks & mitigations | `plan.json` → `risks` |
-| Phase goal | `phase-{N}.json` → `goal` |
-| Tasks | `phase-{N}.json` → `tasks` (descriptions, acceptance criteria, test requirements, file lists) |
-| Resume point | `state current` output — omit if starting fresh |
-| Project overview | `.workflow/project-overview.md` |
-| Component analysis | Relevant `.analysis.md` files (Level 1: frontmatter + CONTENT) — guaranteed fresh by Step 2a analysis gate |
-| Code quality rules | `.workflow/rules/code/*.md` (if any) |
-| TDD policy | `.claude/rules/tdd-policy.md` |
-| User directives | Active user directives captured during this execution session (from checkpoint `User directives` fields). Format as bulleted list. Omit section entirely if none exist. |
+| Placeholder | Source |
+|-------------|--------|
+| `{$PLAN_DIR}` | Resolved in Step 1a |
+| `{phase_number}` | Current phase index |
+| `{mission_briefing}` | `plan.json` → `summary` |
+| `{component_intelligence}` | `plan.json` → `component_intelligence` |
+| `{risks}` | `plan.json` → `risks` |
+| `{phase_goal}` | `phase-{N}.json` → `goal` |
+| `{tasks}` | `phase-{N}.json` → `tasks` (descriptions, acceptance criteria, test requirements, file lists) |
+| `{resume_point}` | `state current` output — omit section if starting fresh |
+| `{project_overview_path}` | `.workflow/project-overview.md` — pass path only |
+| `{component_analysis_paths}` | Paths to relevant `.analysis.md` files — guaranteed fresh by Step 2a analysis gate |
+| `{code_quality_rule_paths}` | Paths to `.workflow/rules/code/*.md` files (if any) + `.claude/rules/quality-criteria.md` |
+| `{tdd_policy_path}` | `.claude/rules/tdd-policy.md` — pass path only |
+| `{user_directives}` | Active user directives from checkpoint fields. Bulleted list. Omit section if none. |
 
 ## For Subagent — Prompt to Pass
 
 Replace `{placeholders}` with collected data. Keep purpose descriptions. Pass everything below this line as the subagent prompt.
 
-**Plan Directory:** `{$PLAN_DIR}`
+**Plan Directory:** {$PLAN_DIR}
 Use for all CLI state-tracking calls (`state set-active`, `complete-task`, etc.).
 
 **Phase:** {phase_number}
@@ -53,21 +53,17 @@ Implement in order. Each task's acceptance criteria are your definition of done,
 {resume_point}
 Skip completed tasks. Start from the first incomplete task.
 
-**Project Overview:**
-{project_overview}
-Codebase architecture, modules, and conventions. Match existing patterns.
+**Context Files (load before starting):**
+Load all these files upfront — issue all Read calls in parallel within a single response, or use the CLI `batch` command.
 
-**Component Analysis:**
-{component_analysis}
-API contracts, hidden behaviors, and integration patterns for components you'll modify. Check before assuming how an interface works.
+| Category | Paths |
+|----------|-------|
+| Project overview | {project_overview_path} |
+| Component analysis | {component_analysis_paths} |
+| Code quality rules | {code_quality_rule_paths} |
+| TDD policy | {tdd_policy_path} |
 
-**Code Quality Rules:**
-{code_quality_rules}
-Non-negotiable. All code must pass these standards.
-
-**TDD Policy:**
-{tdd_policy}
-When to write tests first and when exceptions apply.
+After loading, reference from context. Only make additional reads for files discovered during implementation.
 
 **User Directives:** *(include only if directives exist)*
 {user_directives}

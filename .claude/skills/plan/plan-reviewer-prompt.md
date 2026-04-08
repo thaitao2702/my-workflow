@@ -4,40 +4,44 @@
 
 Each row names a data item and where to get it. Collect paths only — the subagent reads content itself.
 
-| Data | Source |
-|------|--------|
-| `$PLAN_DIR` | Resolved in Step 7 |
-| Planning rules dir | `.workflow/rules/planning/` — pass directory path, or `None` if it doesn't exist |
-| Component doc paths | Paths of `.analysis.md` files used during planning (from Step 4b) |
-| Source file paths | Paths of relevant source files for codebase alignment (from Step 4a) |
-| Project overview path | `.workflow/project-overview.md` |
+| Placeholder | Source |
+|-------------|--------|
+| `{$PLAN_DIR}` | Resolved in Step 7 |
+| `{planning_rules_dir}` | `.workflow/rules/planning/` — pass directory path, or `None` if it doesn't exist |
+| `{component_doc_paths}` | Paths of `.analysis.md` files used during planning (from Step 4b) |
+| `{source_file_paths}` | Paths of relevant source files for codebase alignment (from Step 4a) |
+| `{project_overview_path}` | `.workflow/project-overview.md` |
 
 ## For Subagent — Prompt to Pass
 
 Replace `{placeholders}` with collected paths. Keep purpose descriptions and review dimensions. Pass everything below this line as the subagent prompt.
 
-**Plan Directory:** `{$PLAN_DIR}`
-Read plan and phase data using the CLI. See `.claude/scripts/workflow_cli.reference.md` for commands.
-- Full plan: `plan get --plan-dir {$PLAN_DIR}`
-- Phase list: `plan phases --plan-dir {$PLAN_DIR}`
-- Phase detail: `phase show N --plan-dir {$PLAN_DIR}` for each phase
+**Plan Directory:** {$PLAN_DIR}
 
-**Planning Rules Directory:** `{planning_rules_dir}`
-Read all `.md` files in this directory. These are project-specific planning standards — flag violations.
-If `None` or directory does not exist: no project-specific planning rules to enforce.
+**Step 1: Load plan data.**
 
-**Component Docs:**
-{component_doc_paths}
-Read each file listed above. These are analysis artifacts from planning — verify the plan respects their contracts and hidden behaviors.
-If `None`: no component analysis available — note in evidence for analysis-dependent checks.
+Run the review-dump command to get all plan data, cross-reference tables, and planning rules:
+```
+python .claude/scripts/workflow_cli.py plan review-dump --plan-dir {$PLAN_DIR}
+```
+This returns: plan overview, all phases with tasks and acceptance specs, file ownership by parallel group, requirement trace map, and acceptance spec trace map.
 
-**Source Files:**
-{source_file_paths}
-Read each file listed above. Use for codebase alignment checks (dimension 10).
-If `None`: skip codebase alignment verification, mark as PASS with evidence "no source files provided for verification."
+**Step 2: Load context files.**
 
-**Project Overview:** `{project_overview_path}`
-Read this file. Codebase architecture, modules, and conventions — verify the plan fits existing patterns.
+| Category | Paths | Purpose |
+|----------|-------|---------|
+| Component docs | {component_doc_paths} | Analysis artifacts — verify the plan respects their contracts and hidden behaviors. `None` = no component analysis available, note in evidence. |
+| Source files | {source_file_paths} | For codebase alignment checks (dimension 10). `None` = skip codebase alignment, mark as PASS. |
+| Project overview | {project_overview_path} | Codebase architecture and conventions. |
+| Planning rules | {planning_rules_dir} | Read all `.md` files in this directory. Project-specific planning standards — flag violations. `None` or missing = no rules to enforce. |
+
+Load all files listed above upfront before evaluating any dimension.
+
+**Step 3: Evaluate dimensions using loaded context.**
+Only make additional reads if you discover during evaluation that you need a file not loaded in step 2.
+
+**Step 4: For codebase alignment (dimension 10), grep if needed.**
+If the plan references specific classes, functions, or patterns that should exist in the codebase, verify them. Issue all Grep calls in parallel within a single response.
 
 ## Review Dimensions
 

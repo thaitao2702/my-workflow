@@ -4,29 +4,36 @@
 
 ### Shared Data (sent once)
 
-| Data | Source |
-|------|--------|
-| Project overview | `.workflow/project-overview.md` |
-| Plan context | Plan summary + what was being built and why. Omit if manual invocation. |
+| Placeholder | Source |
+|-------------|--------|
+| `{project_overview_path}` | `.workflow/project-overview.md` — pass path only |
+| `{plan_context}` | Plan summary + what was being built and why. Omit if manual invocation. |
 
-### Per-Component Data (for each component in assessment list)
+### Per-Component Data (repeat per component, indexed: `_1`, `_2`, ...)
 
-| Data | Source |
-|------|--------|
-| Git diff | `git diff` scoped to this component's changed files |
-| Existing analysis | Full content of the existing `.analysis.md` file |
-| Entry files | The component's `entry_files` from the existing analysis frontmatter (needed for hash computation) |
-| Output path | Path to the `.analysis.md` file (for MINOR patches) |
-| Discoveries | From manifest row, or "—" if none. Omit if manual invocation. |
-| Decisions | From manifest row, or "—" if none. Omit if manual invocation. |
+| Placeholder | Source |
+|-------------|--------|
+| `{git_diff_N}` | `git diff` scoped to this component's changed files |
+| `{existing_analysis_path_N}` | Path to the existing `.analysis.md` file |
+| `{entry_files_N}` | The component's `entry_files` from existing analysis frontmatter (for hash computation) |
+| `{output_path_N}` | Path to the `.analysis.md` file (for MINOR patches) |
+| `{discoveries_N}` | From manifest row, or "—" if none. Omit if manual invocation. |
+| `{decisions_N}` | From manifest row, or "—" if none. Omit if manual invocation. |
+
 
 ## For Subagent — Prompt to Pass
 
 Replace `{placeholders}` with collected data. Keep purpose descriptions. Repeat the per-component block for each component. Pass everything below this line as the subagent prompt.
 
-**Project Overview:**
-{project_overview}
-Codebase architecture and conventions. Use to judge whether changes affect project-level concerns.
+**Context Files (load before assessing):**
+Load all these files upfront — issue all Read calls in parallel within a single response.
+
+| Category | Paths |
+|----------|-------|
+| Project overview | {project_overview_path} |
+| Existing analyses | {existing_analysis_paths} |
+
+After loading, reference from context.
 
 **Plan Context:** *(omit section if not available)*
 {plan_context}
@@ -40,14 +47,13 @@ What was being built and why. Sharpens your significance judgment — "3 new fie
 {git_diff_1}
 The code changes for this component. Base your classification on this — every claim must trace back to something in the diff.
 
-**Existing Analysis:**
-{existing_analysis_1}
-The current `.analysis.md` content. For MINOR updates, patch this document surgically — add rows, update fields, don't rewrite sections that are still accurate.
+**Existing Analysis Path:** {existing_analysis_path_1}
+Already loaded in context files above. For MINOR updates, patch this document surgically — add rows, update fields, don't rewrite sections that are still accurate.
 
-**Entry Files:** `{entry_files_1}`
-The component's source files. For MINOR updates, recompute `source_hash` by running: `python .claude/scripts/workflow_cli.py hash {entry_files}`
+**Entry Files:** {entry_files_1}
+The component's source files. For MINOR updates, recompute `source_hash`: `python .claude/scripts/workflow_cli.py hash {entry_files}`
 
-**Output Path:** `{output_path_1}`
+**Output Path:** {output_path_1}
 If you classify as MINOR_UPDATE, write the patched analysis to this path.
 
 **Discoveries:** *(omit if none)*

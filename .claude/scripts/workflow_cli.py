@@ -6,6 +6,7 @@ Usage:
   workflow-cli plan get [FIELD] [--plan-dir DIR]
   workflow-cli plan phases [--plan-dir DIR]
   workflow-cli plan set-status STATUS [--plan-dir DIR]
+  workflow-cli plan review-dump [--plan-dir DIR]
 
   workflow-cli phase show N [--plan-dir DIR]
   workflow-cli phase tasks N [--plan-dir DIR]
@@ -35,6 +36,10 @@ Usage:
   workflow-cli analysis read COMPONENT [--level 0|1|2]
   workflow-cli analysis list DIR
 
+  workflow-cli read FILE [FILE ...]
+  workflow-cli grep [--path P] [--type T] [--context N] PATTERN
+  workflow-cli batch --commands 'JSON_ARRAY'
+
   workflow-cli find-active
   workflow-cli init PLAN_DIR
   workflow-cli hash FILE [FILE...]
@@ -43,14 +48,24 @@ Usage:
 """
 
 import hashlib
+import io
 import json
 import os
+import re
+import shlex
+import subprocess
 import sys
+from contextlib import redirect_stdout
 from datetime import datetime, timezone
 from pathlib import Path
 
 
 WORKFLOW_DIR = ".workflow/plans"
+
+
+class CLIError(Exception):
+    """Raised by command functions to signal user-facing errors."""
+    pass
 
 
 def find_project_root() -> Path:
@@ -129,15 +144,13 @@ def resolve_plan_dir(explicit: str | None = None) -> Path:
     if latest:
         return latest
 
-    print("Error: No plan directory found.", file=sys.stderr)
-    sys.exit(1)
+    raise CLIError("No plan directory found.")
 
 
 def read_json(path: Path) -> dict:
     """Read a JSON file."""
     if not path.exists():
-        print(f"Error: {path} not found.", file=sys.stderr)
-        sys.exit(1)
+        raise CLIError(f"{path} not found.")
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -161,8 +174,7 @@ def cmd_plan_get(plan_dir: Path, field: str | None):
             val = plan[field]
             print(json.dumps(val) if isinstance(val, (dict, list)) else str(val))
         else:
-            print(f"Error: field '{field}' not found in plan.json", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError(f"field '{field}' not found in plan.json")
     else:
         print(json.dumps(plan, indent=2))
 
@@ -190,8 +202,7 @@ def cmd_plan_set_status(plan_dir: Path, status: str):
     """Update plan status."""
     valid = ("draft", "reviewed", "approved", "executing", "completed")
     if status not in valid:
-        print(f"Error: status must be one of {valid}", file=sys.stderr)
-        sys.exit(1)
+        raise CLIError(f"status must be one of {valid}")
     plan = read_json(plan_dir / "plan.json")
     plan["status"] = status
     write_json(plan_dir / "plan.json", plan)
@@ -211,6 +222,235 @@ def cmd_plan_phases(plan_dir: Path):
     for p in plan.get("phases", []):
         status = state_phases.get(p["phase"], "pending")
         print(json.dumps({"phase": p["phase"], "name": p["name"], "group": p.get("group"), "status": status}))
+
+
+def cmd_plan_review_dump(plan_dir: Path):
+    """Dump all plan data in an AI-agent-friendly format for plan review."""
+    plan = read_json(plan_dir / "plan.json")
+
+    # Load all phase files
+    phases_data = []
+    for p_info in plan.get("phases", []):
+        phase_file = plan_dir / f"phase-{p_info['phase']}.json"
+        if phase_file.exists():
+            phases_data.append(read_json(phase_file))
+
+    lines = []
+    lines.append("═══════════════════════════════════════")
+    lines.append("PLAN REVIEW PACKET")
+    lines.append("═══════════════════════════════════════")
+    lines.append("")
+
+    # ── PLAN OVERVIEW ──
+    lines.append("══ PLAN OVERVIEW ══")
+    lines.append(f"Name: {plan.get('name', '')}")
+    lines.append(f"Status: {plan.get('status', '')}")
+    lines.append(f"Created: {plan.get('created', '')}")
+    lines.append(f"Total phases: {plan.get('total_phases', '?')} | Total tasks: {plan.get('total_tasks', '?')}")
+    lines.append("")
+
+    lines.append("Summary:")
+    lines.append(plan.get("summary", ""))
+    lines.append("")
+
+    scope = plan.get("scope", {})
+    lines.append("Scope (in):")
+    for item in scope.get("in_scope", []):
+        lines.append(f"- {item}")
+    lines.append("")
+
+    lines.append("Scope (out):")
+    for item in scope.get("out_of_scope", []):
+        lines.append(f"- {item}")
+    lines.append("")
+
+    lines.append("Component Intelligence:")
+    lines.append(plan.get("component_intelligence", ""))
+    lines.append("")
+
+    lines.append("Risks:")
+    for risk in plan.get("risks", []):
+        impact = risk.get("impact", "").upper()
+        lines.append(f"- [{impact}] {risk.get('risk', '')} → Mitigation: {risk.get('mitigation', '')}")
+    lines.append("")
+
+    lines.append("Dependency Graph:")
+    for p_info in plan.get("phases", []):
+        deps = p_info.get("dependencies", [])
+        dep_str = ", ".join(f"P{d}" for d in deps) if deps else "none"
+        lines.append(f"P{p_info['phase']} ({p_info['name']}) → depends on: {dep_str}")
+    lines.append("")
+
+    # ── PHASE sections ──
+    for phase in phases_data:
+        pnum = phase.get("phase", "?")
+        pname = phase.get("name", "")
+        pgroup = phase.get("group", "?")
+        pdeps = phase.get("depends_on", [])
+        dep_str = ", ".join(str(d) for d in pdeps) if pdeps else "none"
+        pstatus = phase.get("status", "pending")
+
+        lines.append(f"══ PHASE {pnum}: {pname} ══")
+        lines.append(f"Group: {pgroup} | Depends on: {dep_str} | Status: {pstatus}")
+        lines.append("")
+
+        lines.append("Goal:")
+        lines.append(phase.get("goal", ""))
+        lines.append("")
+
+        affected = phase.get("affected_components", [])
+        lines.append(f"Affected components: {', '.join(affected)}")
+        lines.append("")
+
+        for task in phase.get("tasks", []):
+            lines.append(f"--- Task {task.get('id', '?')}: {task.get('name', '')} ---")
+            lines.append(f"Description: {task.get('description', '')}")
+            files = task.get("files", [])
+            lines.append(f"Files: {', '.join(files)}")
+            lines.append("Acceptance criteria:")
+            for crit in task.get("acceptance_criteria", []):
+                lines.append(f"  - {crit}")
+            lines.append("Test requirements:")
+            for req in task.get("test_requirements", []):
+                lines.append(f"  - {req}")
+            lines.append("")
+
+        lines.append("Acceptance Specs:")
+        for spec in phase.get("acceptance_specs", []):
+            traces = spec.get("traces_to", [])
+            lines.append(f"  {spec.get('id', '?')}: {spec.get('description', '')}")
+            lines.append(f"    Traces to: {', '.join(traces)}")
+            lines.append(f"    Verification: {spec.get('verification_type', '')}")
+            lines.append(f"    Verify by: {spec.get('verify_by', '')}")
+        lines.append("")
+
+    # ═══ CROSS-REFERENCE TABLES ═══
+    lines.append("═══════════════════════════════════════")
+    lines.append("CROSS-REFERENCE TABLES")
+    lines.append("═══════════════════════════════════════")
+    lines.append("")
+
+    # ── FILE OWNERSHIP by parallel group ──
+    lines.append("══ FILE OWNERSHIP (by parallel group) ══")
+
+    # Collect all groups
+    group_files: dict[str, dict[str, list[str]]] = {}  # group -> filepath -> [phase+task refs]
+    for phase in phases_data:
+        pnum = phase.get("phase", "?")
+        pgroup = phase.get("group", "?")
+        if pgroup not in group_files:
+            group_files[pgroup] = {}
+        for task in phase.get("tasks", []):
+            tid = task.get("id", "?")
+            ref = f"Phase {pnum} {tid}"
+            for f in task.get("files", []):
+                if f not in group_files[pgroup]:
+                    group_files[pgroup][f] = []
+                group_files[pgroup][f].append(ref)
+
+    for group in sorted(group_files.keys()):
+        lines.append(f"Group {group}:")
+        for filepath, refs in sorted(group_files[group].items()):
+            lines.append(f"  {filepath} → {', '.join(refs)}")
+    lines.append("")
+
+    # ── REQUIREMENT TRACE ──
+    lines.append("══ REQUIREMENT TRACE ══")
+
+    _STOP_WORDS = {"with", "and", "the", "for", "in", "of", "a", "an", "to",
+                   "is", "are", "be", "by", "from", "at", "on", "that", "this",
+                   "all", "its", "as", "or"}
+
+    def _keywords(text: str) -> set[str]:
+        words = re.findall(r"[a-zA-Z0-9_]+", text.lower())
+        return {w for w in words if w not in _STOP_WORDS and len(w) > 2}
+
+    def _task_matches_requirement(task: dict, req_keywords: set[str]) -> bool:
+        task_text = (task.get("name", "") + " " + task.get("description", "")).lower()
+        task_words = _keywords(task_text)
+        return len(req_keywords & task_words) >= 2
+
+    in_scope = scope.get("in_scope", [])
+    req_trace: dict[str, list[str]] = {}  # requirement text -> [phase+task refs]
+    for req in in_scope:
+        req_kw = _keywords(req)
+        matched = []
+        for phase in phases_data:
+            pnum = phase.get("phase", "?")
+            for task in phase.get("tasks", []):
+                if _task_matches_requirement(task, req_kw):
+                    matched.append(f"Phase {pnum} {task.get('id', '?')}")
+        req_trace[req] = matched
+
+    for req, refs in req_trace.items():
+        if refs:
+            lines.append(f'  "{req}" → {", ".join(refs)}')
+        else:
+            lines.append(f'  "{req}" → (none)')
+    lines.append("")
+
+    # ── ACCEPTANCE SPEC TRACE ──
+    lines.append("══ ACCEPTANCE SPEC TRACE ══")
+
+    for phase in phases_data:
+        pnum = phase.get("phase", "?")
+        task_ids_in_phase = {t.get("id") for t in phase.get("tasks", [])}
+        for spec in phase.get("acceptance_specs", []):
+            spec_id = spec.get("id", "?")
+            traces_to = spec.get("traces_to", [])
+            validity_parts = []
+            for tid in traces_to:
+                if tid in task_ids_in_phase:
+                    validity_parts.append(tid)
+                else:
+                    validity_parts.append(f"INVALID: {tid} not found")
+            validity_str = ", ".join(validity_parts) if validity_parts else "(none)"
+            is_valid = all(tid in task_ids_in_phase for tid in traces_to)
+            valid_label = "valid" if is_valid else "INVALID"
+            lines.append(f"  Phase {pnum} {spec_id} → traces_to: [{', '.join(traces_to)}] — {valid_label}")
+    lines.append("")
+
+    # Scope coverage: for each in_scope requirement, find which specs cover it
+    lines.append("  Scope coverage:")
+    # Build map: for each requirement, find specs whose traced tasks also match the requirement
+    for req in in_scope:
+        req_kw = _keywords(req)
+        covering_specs = []
+        for phase in phases_data:
+            pnum = phase.get("phase", "?")
+            task_map = {t.get("id"): t for t in phase.get("tasks", [])}
+            for spec in phase.get("acceptance_specs", []):
+                spec_id = spec.get("id", "?")
+                traces_to = spec.get("traces_to", [])
+                # Spec covers this requirement if any of its traced tasks match the requirement
+                for tid in traces_to:
+                    task = task_map.get(tid)
+                    if task and _task_matches_requirement(task, req_kw):
+                        covering_specs.append(f"{spec_id} (Phase {pnum})")
+                        break
+        if covering_specs:
+            lines.append(f'  "{req}" → {", ".join(covering_specs)}')
+        else:
+            lines.append(f'  "{req}" → (no spec)')
+    lines.append("")
+
+    # ─── Planning Rules ───────────────────────────────────────────────────────
+    root = find_project_root()
+    planning_rules_dir = root / ".workflow" / "rules" / "planning"
+    if planning_rules_dir.is_dir():
+        md_files = sorted(planning_rules_dir.glob("*.md"))
+        if md_files:
+            lines.append("═══════════════════════════════════════")
+            lines.append("PLANNING RULES")
+            lines.append("═══════════════════════════════════════")
+            lines.append("")
+            for md_file in md_files:
+                rule_name = md_file.stem
+                lines.append(f"══ RULE: {rule_name} ══")
+                lines.append(md_file.read_text(encoding="utf-8"))
+                lines.append("")
+
+    print("\n".join(lines))
 
 
 # ─── Phase Commands ──────────────────────────────────────────────────────────
@@ -257,8 +497,7 @@ def cmd_phase_task(plan_dir: Path, phase_num: int, task_id: str):
         if t["id"] == task_id:
             print(json.dumps(t, indent=2))
             return
-    print(f"Error: task '{task_id}' not found in phase {phase_num}", file=sys.stderr)
-    sys.exit(1)
+    raise CLIError(f"task '{task_id}' not found in phase {phase_num}")
 
 
 # ─── State Commands ──────────────────────────────────────────────────────────
@@ -271,8 +510,7 @@ def cmd_state_get(plan_dir: Path, field: str | None):
             val = state[field]
             print(json.dumps(val, indent=2) if isinstance(val, (dict, list)) else str(val))
         else:
-            print(f"Error: field '{field}' not found in state.json", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError(f"field '{field}' not found in state.json")
     else:
         print(json.dumps(state, indent=2))
 
@@ -351,8 +589,7 @@ def _get_state_and_phase(plan_dir: Path, phase_num: int) -> tuple[dict, dict]:
     for p in state.get("phases", []):
         if p["phase"] == phase_num:
             return state, p
-    print(f"Error: phase {phase_num} not found in state", file=sys.stderr)
-    sys.exit(1)
+    raise CLIError(f"phase {phase_num} not found in state")
 
 
 def _get_task(phase_data: dict, task_id: str) -> dict:
@@ -360,8 +597,7 @@ def _get_task(phase_data: dict, task_id: str) -> dict:
     for t in phase_data.get("tasks", []):
         if t["id"] == task_id:
             return t
-    print(f"Error: task '{task_id}' not found", file=sys.stderr)
-    sys.exit(1)
+    raise CLIError(f"task '{task_id}' not found")
 
 
 def _save_state(plan_dir: Path, state: dict):
@@ -433,8 +669,7 @@ def cmd_state_skip_task(plan_dir: Path, phase_num: int, task_id: str, reason: st
 def cmd_state_substep(plan_dir: Path, phase_num: int, task_id: str, step: str, status: str):
     """Update a substep status (done or next)."""
     if status not in ("done", "next"):
-        print("Error: substep status must be 'done' or 'next'", file=sys.stderr)
-        sys.exit(1)
+        raise CLIError("substep status must be 'done' or 'next'")
 
     state, phase = _get_state_and_phase(plan_dir, phase_num)
     task = _get_task(phase, task_id)
@@ -508,8 +743,7 @@ def cmd_state_add_discovery(plan_dir: Path, phase_num: int, component: str,
     """Add a structured discovery entry to state."""
     valid_categories = ("hidden_behavior", "wrong_assumption", "edge_case", "integration_gotcha")
     if category not in valid_categories:
-        print(f"Error: category must be one of {valid_categories}", file=sys.stderr)
-        sys.exit(1)
+        raise CLIError(f"category must be one of {valid_categories}")
 
     state = read_json(plan_dir / "state.json")
     if "discoveries" not in state:
@@ -571,8 +805,7 @@ def cmd_find_active():
         for plan_dir in active:
             print(str(plan_dir))
     else:
-        print("No active execution found.", file=sys.stderr)
-        sys.exit(1)
+        raise CLIError("No active execution found.")
 
 
 def cmd_init(plan_dir_str: str):
@@ -850,8 +1083,7 @@ def cmd_analysis_read(component: str, level: int):
     analysis_path = _find_analysis_doc(comp_path)
 
     if not analysis_path.exists():
-        print(f"Error: analysis doc not found at {analysis_path}", file=sys.stderr)
-        sys.exit(1)
+        raise CLIError(f"analysis doc not found at {analysis_path}")
 
     text = analysis_path.read_text(encoding="utf-8")
 
@@ -908,8 +1140,7 @@ def cmd_analysis_list(directory: str):
         dir_path = root / directory
 
     if not dir_path.is_dir():
-        print(f"Error: {directory} is not a directory.", file=sys.stderr)
-        sys.exit(1)
+        raise CLIError(f"{directory} is not a directory.")
 
     for p in sorted(dir_path.rglob("*.analysis.md")):
         print(str(p.relative_to(root)))
@@ -922,8 +1153,7 @@ def cmd_hash(files: list[str]):
     try:
         print(_compute_hash(files))
     except FileNotFoundError as e:
-        print(f"Error: {e} not found.", file=sys.stderr)
-        sys.exit(1)
+        raise CLIError(f"{e} not found.")
 
 
 # ─── Config ──────────────────────────────────────────────────────────────────
@@ -949,29 +1179,242 @@ def cmd_config_get(field: str | None):
         print(json.dumps(config, indent=2))
 
 
-# ─── Main ────────────────────────────────────────────────────────────────────
+# ─── Read Command ─────────────────────────────────────────────────────────────
 
-def main():
-    args = sys.argv[1:]
+def cmd_read(file_specs: list[str]):
+    """Read one or more files and output contents with section headers."""
+    root = find_project_root()
+
+    for spec in file_specs:
+        # Parse optional line range: FILE:start-end
+        start_line: int | None = None
+        end_line: int | None = None
+        filepath = spec
+
+        # Check for range suffix — look for :\d+-\d+$ pattern
+        range_match = re.search(r"^(.+):(\d+)-(\d+)$", spec)
+        if range_match:
+            filepath = range_match.group(1)
+            start_line = int(range_match.group(2))
+            end_line = int(range_match.group(3))
+
+        p = Path(filepath)
+        if not p.is_absolute():
+            p = root / filepath
+
+        if start_line is not None:
+            header = f"══ FILE: {filepath}:{start_line}-{end_line} ══"
+        else:
+            header = f"══ FILE: {filepath} ══"
+
+        print(header)
+
+        if not p.exists():
+            print(f"ERROR: File not found: {filepath}")
+            continue
+
+        # Binary detection: check first 1024 bytes for null bytes
+        try:
+            first_bytes = p.read_bytes()[:1024]
+        except OSError as e:
+            print(f"ERROR: Cannot read file: {e}")
+            continue
+
+        if b"\x00" in first_bytes:
+            print("(binary file, skipped)")
+            continue
+
+        try:
+            text = p.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            try:
+                text = p.read_text(encoding="latin-1")
+            except Exception as e:
+                print(f"ERROR: Cannot decode file: {e}")
+                continue
+
+        if not text:
+            print("(empty file)")
+            continue
+
+        if start_line is not None:
+            lines = text.splitlines(keepends=True)
+            # 1-based indexing
+            selected = lines[start_line - 1:end_line]
+            print("".join(selected), end="" if selected and selected[-1].endswith(("\n", "\r")) else "\n")
+        else:
+            print(text, end="" if text.endswith(("\n", "\r\n", "\r")) else "\n")
+
+
+# ─── Grep Command ─────────────────────────────────────────────────────────────
+
+def _grep_python_fallback(pattern: str, search_path: Path, file_type: str | None, context_lines: int):
+    """Pure Python grep fallback using re module."""
+    # Map common type names to extensions
+    type_ext_map: dict[str, list[str]] = {
+        "py": [".py"],
+        "js": [".js"],
+        "ts": [".ts"],
+        "tsx": [".tsx"],
+        "jsx": [".jsx"],
+        "java": [".java"],
+        "go": [".go"],
+        "rs": [".rs"],
+        "c": [".c", ".h"],
+        "cpp": [".cpp", ".cc", ".cxx", ".hpp"],
+        "rb": [".rb"],
+        "php": [".php"],
+        "sh": [".sh"],
+        "md": [".md"],
+        "json": [".json"],
+        "yaml": [".yaml", ".yml"],
+        "toml": [".toml"],
+        "html": [".html", ".htm"],
+        "css": [".css"],
+        "sql": [".sql"],
+    }
+    allowed_exts: list[str] | None = type_ext_map.get(file_type, None) if file_type else None
+
+    try:
+        compiled = re.compile(pattern)
+    except re.error as e:
+        raise CLIError(f"Invalid regex pattern: {e}")
+
+    output_lines = []
+
+    def search_file(fp: Path):
+        if allowed_exts is not None and fp.suffix.lower() not in allowed_exts:
+            return
+        try:
+            first_bytes = fp.read_bytes()[:1024]
+            if b"\x00" in first_bytes:
+                return
+            text = fp.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return
+
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            if compiled.search(line):
+                # Gather context lines
+                ctx_start = max(0, i - context_lines)
+                ctx_end = min(len(lines), i + context_lines + 1)
+                for j in range(ctx_start, ctx_end):
+                    sep = ":" if j == i else "-"
+                    output_lines.append(f"{fp}:{j + 1}{sep} {lines[j]}")
+                if context_lines > 0 and ctx_end < len(lines):
+                    output_lines.append("--")
+
+    if search_path.is_file():
+        search_file(search_path)
+    elif search_path.is_dir():
+        for fp in sorted(search_path.rglob("*")):
+            if fp.is_file():
+                search_file(fp)
+
+    return "\n".join(output_lines)
+
+
+def cmd_grep(pattern: str, search_path: str | None, file_type: str | None, context_lines: int):
+    """Search for a regex pattern in files using ripgrep (rg) with Python fallback."""
+    root = find_project_root()
+
+    if search_path:
+        p = Path(search_path)
+        if not p.is_absolute():
+            p = root / search_path
+    else:
+        p = root
+
+    rg_args = ["rg", pattern, str(p)]
+    if file_type:
+        rg_args += ["--type", file_type]
+    if context_lines > 0:
+        rg_args += ["-C", str(context_lines)]
+
+    try:
+        result = subprocess.run(rg_args, capture_output=True, text=True)
+        output = result.stdout
+        if not output.strip():
+            print("(no matches)")
+        else:
+            print(output, end="" if output.endswith("\n") else "\n")
+    except FileNotFoundError:
+        # rg not found — fall back to Python implementation
+        output = _grep_python_fallback(pattern, p, file_type, context_lines)
+        if not output.strip():
+            print("(no matches)")
+        else:
+            print(output)
+
+
+# ─── Batch Command ────────────────────────────────────────────────────────────
+
+def cmd_batch(commands_json: str, plan_dir_override: str | None = None):
+    """Execute multiple CLI sub-commands in one call, returning sectioned output."""
+    try:
+        commands = json.loads(commands_json)
+    except json.JSONDecodeError as e:
+        raise CLIError(f"Invalid JSON for --commands: {e}")
+
+    if not isinstance(commands, list):
+        raise CLIError("--commands must be a JSON array of strings")
+
+    total = len(commands)
+    results = []
+    for idx, cmd_str in enumerate(commands, start=1):
+        if not isinstance(cmd_str, str):
+            results.append((idx, cmd_str, f"ERROR: command must be a string, got {type(cmd_str).__name__}"))
+            continue
+
+        try:
+            sub_args = shlex.split(cmd_str, posix=True)
+        except ValueError as e:
+            results.append((idx, cmd_str, f"ERROR: Failed to parse command: {e}"))
+            continue
+
+        try:
+            output = dispatch(sub_args, plan_dir_override=plan_dir_override)
+        except Exception as e:
+            output = f"ERROR: {e}"
+
+        results.append((idx, cmd_str, output))
+
+    output_parts = []
+    for idx, cmd_str, out in results:
+        output_parts.append(f"══ [{idx}/{total}] {cmd_str} ══")
+        output_parts.append(out.rstrip("\n") if out else "")
+        output_parts.append("")
+
+    print("\n".join(output_parts))
+
+
+# ─── Dispatch & Routing ───────────────────────────────────────────────────────
+
+def _route(args: list[str], plan_dir_override: str | None = None):
+    """Route parsed args to the appropriate command function.
+
+    Raises CLIError on user-facing errors. Does not call sys.exit().
+    """
     if not args:
         print(__doc__)
-        sys.exit(0)
+        return
 
     # Extract --plan-dir if present
-    plan_dir_arg = None
+    plan_dir_arg = plan_dir_override
     if "--plan-dir" in args:
         idx = args.index("--plan-dir")
         if idx + 1 < len(args):
             plan_dir_arg = args[idx + 1]
             args = args[:idx] + args[idx + 2:]
         else:
-            print("Error: --plan-dir requires a value", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError("--plan-dir requires a value")
 
     cmd = args[0] if args else ""
     sub = args[1] if len(args) > 1 else ""
 
-    # Routing
+    # ── Routing ──
+
     if cmd == "find-active":
         cmd_find_active()
         return
@@ -988,8 +1431,7 @@ def main():
         if sub == "get":
             cmd_config_get(args[2] if len(args) > 2 else None)
         else:
-            print(f"Unknown config command: {sub}", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError(f"Unknown config command: {sub}")
         return
 
     if cmd == "analysis":
@@ -1006,8 +1448,64 @@ def main():
         elif sub == "list" and len(args) >= 3:
             cmd_analysis_list(args[2])
         else:
-            print(f"Unknown analysis command: {sub}", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError(f"Unknown analysis command: {sub}")
+        return
+
+    if cmd == "read":
+        if len(args) < 2:
+            raise CLIError("read requires at least one FILE argument")
+        cmd_read(args[1:])
+        return
+
+    if cmd == "grep":
+        # grep [--path P] [--type T] [--context N] PATTERN
+        remaining = args[1:]
+        grep_path: str | None = None
+        grep_type: str | None = None
+        grep_context: int = 0
+
+        i = 0
+        while i < len(remaining):
+            if remaining[i] == "--path" and i + 1 < len(remaining):
+                grep_path = remaining[i + 1]
+                i += 2
+            elif remaining[i] == "--type" and i + 1 < len(remaining):
+                grep_type = remaining[i + 1]
+                i += 2
+            elif remaining[i] == "--context" and i + 1 < len(remaining):
+                try:
+                    grep_context = int(remaining[i + 1])
+                except ValueError:
+                    raise CLIError(f"--context must be an integer, got: {remaining[i + 1]}")
+                i += 2
+            else:
+                # Remaining arg is the pattern (last positional)
+                i += 1
+
+        # Pattern is the last non-flag positional argument
+        positional = [
+            a for j, a in enumerate(remaining)
+            if not (a.startswith("--") or (j > 0 and remaining[j - 1] in ("--path", "--type", "--context")))
+        ]
+        if not positional:
+            raise CLIError("grep requires a PATTERN argument")
+        pattern = positional[-1]
+        cmd_grep(pattern, grep_path, grep_type, grep_context)
+        return
+
+    if cmd == "batch":
+        commands_json: str | None = None
+        remaining = args[1:]
+        i = 0
+        while i < len(remaining):
+            if remaining[i] == "--commands" and i + 1 < len(remaining):
+                commands_json = remaining[i + 1]
+                i += 2
+            else:
+                i += 1
+        if commands_json is None:
+            raise CLIError("batch requires --commands 'JSON_ARRAY'")
+        cmd_batch(commands_json, plan_dir_override=plan_dir_arg)
         return
 
     if cmd == "plan":
@@ -1020,16 +1518,16 @@ def main():
             cmd_plan_phases(plan_dir)
         elif sub == "set-status" and len(args) > 2:
             cmd_plan_set_status(plan_dir, args[2])
+        elif sub == "review-dump":
+            cmd_plan_review_dump(plan_dir)
         else:
-            print(f"Unknown plan command: {sub}", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError(f"Unknown plan command: {sub}")
         return
 
     if cmd == "phase":
         plan_dir = resolve_plan_dir(plan_dir_arg)
         if len(args) < 3:
-            print("Error: phase commands require a phase number", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError("phase commands require a phase number")
         phase_num = int(args[2])
         if sub == "show":
             cmd_phase_show(plan_dir, phase_num)
@@ -1038,8 +1536,7 @@ def main():
         elif sub == "task" and len(args) >= 4:
             cmd_phase_task(plan_dir, phase_num, args[3])
         else:
-            print(f"Unknown phase command: {sub}", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError(f"Unknown phase command: {sub}")
         return
 
     if cmd == "state":
@@ -1091,12 +1588,63 @@ def main():
         elif sub == "set" and len(args) >= 4:
             cmd_state_set(plan_dir, args[2], " ".join(args[3:]))
         else:
-            print(f"Unknown state command: {sub}", file=sys.stderr)
-            sys.exit(1)
+            raise CLIError(f"Unknown state command: {sub}")
         return
 
-    print(f"Unknown command: {cmd}", file=sys.stderr)
-    sys.exit(1)
+    raise CLIError(f"Unknown command: {cmd}")
+
+
+def dispatch(args: list[str], plan_dir_override: str | None = None) -> str:
+    """Route args to the correct command and return its stdout output as a string.
+
+    Catches CLIError and returns "ERROR: {message}" instead of raising.
+    """
+    buf = io.StringIO()
+    try:
+        with redirect_stdout(buf):
+            _route(args, plan_dir_override)
+    except CLIError as e:
+        return f"ERROR: {e}"
+    return buf.getvalue()
+
+
+# ─── Main ────────────────────────────────────────────────────────────────────
+
+def main():
+    # Ensure stdout/stderr use UTF-8 on all platforms (esp. Windows)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+    args = sys.argv[1:]
+    if not args:
+        sys.stdout.write(__doc__ + "\n")
+        sys.exit(0)
+
+    try:
+        buf = io.StringIO()
+        error_occurred = False
+        error_msg = ""
+        try:
+            with redirect_stdout(buf):
+                _route(args)
+        except CLIError as e:
+            error_occurred = True
+            error_msg = str(e)
+
+        if error_occurred:
+            sys.stderr.write(f"Error: {error_msg}\n")
+            sys.exit(1)
+        else:
+            output = buf.getvalue()
+            if output:
+                sys.stdout.write(output)
+    except SystemExit:
+        raise
+    except Exception as e:
+        sys.stderr.write(f"Error: {e}\n")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

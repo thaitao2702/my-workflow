@@ -14,10 +14,10 @@
 
 Replace `{placeholders}` with collected data. Pass everything below this line as the subagent prompt.
 
-**Entry Component:** `{entry_component_path}`
+**Entry Component:** {entry_component_path}
 The starting file. Build the full transitive dependency tree from this file's imports, recursively.
 
-**Project Root:** `{project_root}`
+**Project Root:** {project_root}
 Base directory for config files and project boundary. A file is "local" if it lives under this root.
 
 **Language:** *(omit if not provided)*

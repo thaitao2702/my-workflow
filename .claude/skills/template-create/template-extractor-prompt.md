@@ -6,11 +6,12 @@ Each row names a data item and where to get it. Data varies by source mode — c
 
 ### All Modes
 
-| Data | Source |
-|------|--------|
-| Template name | User input or calling skill suggestion |
-| Project overview | `.workflow/project-overview.md` |
-| Analysis docs | `.analysis.md` files for touched components (if they exist) |
+| Placeholder | Source |
+|-------------|--------|
+| `{template_name}` | User input or calling skill suggestion |
+| `{project_overview_path}` | `.workflow/project-overview.md` — pass path only |
+| `{analysis_doc_paths}` | Paths to `.analysis.md` files for touched components (if they exist) |
+
 
 ### Mode: A-session (from current session — richest)
 
@@ -27,9 +28,7 @@ Each row names a data item and where to get it. Data varies by source mode — c
 
 | Data | Source |
 |------|--------|
-| Plan summary | CLI: read plan summary (see reference doc) |
-| Phase/task structure | CLI: read each phase's tasks (see reference doc) |
-| Component intelligence | CLI: read plan component_intelligence field |
+| Plan summary + phases + component intelligence | CLI: `plan review-dump --plan-dir $PLAN_DIR` — returns all plan data in one call |
 | Git diff | `git diff {execution_start_commit}..HEAD` |
 
 ### Mode: B (from git history)
@@ -56,7 +55,7 @@ Each row names a data item and where to get it. Data varies by source mode — c
 
 Replace `{placeholders}` with collected data. Include only sections that have data. Keep purpose descriptions. Pass everything below this line as the subagent prompt.
 
-**Template Name:** `{template_name}`
+**Template Name:** {template_name}
 The name for this template. Use it in your output headings and variable naming.
 
 **Source Material:**
@@ -67,13 +66,15 @@ The concrete implementation to abstract from. This is your primary input — rea
 {session_context}
 Reasoning, decisions, and discoveries from the planning/execution session. This is context that doesn't survive in files — trade-offs considered, assumptions corrected, adaptations made. Use it to produce richer gotchas and more accurate variability classifications.
 
-**Analysis Docs:**
-{analysis_docs}
-Structured component knowledge. Use to understand integration patterns and hidden behaviors that should carry into the template.
+**Context Files (load before extracting):**
+Load all these files upfront — issue all Read calls in parallel within a single response.
 
-**Project Overview:**
-{project_overview}
-Codebase architecture and conventions. Use to ensure the template fits the project's patterns.
+| Category | Paths |
+|----------|-------|
+| Analysis docs | {analysis_doc_paths} |
+| Project overview | {project_overview_path} |
+
+After loading, reference from context.
 
 **Your Task:**
 

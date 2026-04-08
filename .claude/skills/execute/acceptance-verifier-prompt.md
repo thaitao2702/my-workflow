@@ -2,19 +2,19 @@
 
 ## For Orchestrator — Data to Collect
 
-Each row names a data item and where to get it. Collect all before constructing the prompt.
+Each row names a `{placeholder}` and where to get its value. Collect all before constructing the prompt.
 
-| Data | Source |
-|------|--------|
-| Mode | Resolved from `.workflow/config.json`: if `acceptance_mode` is `auto`, use `test` when `test_command` exists, `reason` otherwise. If `test` or `reason`, use directly. |
-| Acceptance specs | `phase-{N}.json` → `acceptance_specs` |
-| Task file lists | `phase-{N}.json` → `tasks[].files` (map task-id to file list for traces_to resolution) |
-| Code changes | `git diff` for this phase |
-| Test command | `.workflow/config.json` → `test_command` (test mode only, omit for reason mode) |
-| Test command timeout | `.workflow/config.json` → `test_command_timeout` (test mode only, default 120000) |
-| Project overview | `.workflow/project-overview.md` |
-| Component analysis | Relevant `.analysis.md` files |
-| Phase goal | `phase-{N}.json` → `goal` |
+| Placeholder | Source |
+|-------------|--------|
+| `{mode}` | Resolved from `.workflow/config.json`: if `acceptance_mode` is `auto`, use `test` when `test_command` exists, `reason` otherwise. If `test` or `reason`, use directly. |
+| `{acceptance_specs}` | `phase-{N}.json` → `acceptance_specs` |
+| `{task_file_lists}` | `phase-{N}.json` → `tasks[].files` (map task-id to file list for traces_to resolution) |
+| `{code_changes}` | `git diff` for this phase |
+| `{test_command}` | `.workflow/config.json` → `test_command` (test mode only, omit for reason mode) |
+| `{test_command_timeout}` | `.workflow/config.json` → `test_command_timeout` (test mode only, default 120000) |
+| `{project_overview_path}` | `.workflow/project-overview.md` — pass path only |
+| `{component_analysis_paths}` | Paths to relevant `.analysis.md` files |
+| `{phase_goal}` | `phase-{N}.json` → `goal` |
 
 ## For Subagent — Prompt to Pass
 
@@ -43,13 +43,15 @@ Use this command to run tests. Place acceptance test files following project con
 {test_command_timeout}
 Maximum milliseconds for test execution.
 
-**Project Overview:**
-{project_overview}
-Codebase architecture and conventions. Match test conventions when writing tests (test mode).
+**Context Files (load before verifying):**
+Load all these files upfront — issue all Read calls in parallel within a single response.
 
-**Component Analysis:**
-{component_analysis}
-API contracts and hidden behaviors. Verify the implementation respects these.
+| Category | Paths |
+|----------|-------|
+| Project overview | {project_overview_path} |
+| Component analysis | {component_analysis_paths} |
+
+After loading, reference from context.
 
 **Phase Goal:**
 {phase_goal}
@@ -67,7 +69,8 @@ What this phase achieves. Context for understanding the specs.
 
 ### Reason Mode
 
-1. For each spec, read the relevant source files (guided by `traces_to` → task file lists).
+1. Load all source files for all specs upfront. Collect all file paths from `traces_to` → task file lists across all specs, then issue all Read calls in parallel within a single response.
+   Then for each spec, reference the relevant files from the loaded context.
 2. Trace the `verify_by` scenario through the code path.
 3. Cite specific file:line references for every claim.
 4. If a code path is missing, incomplete, or incorrect — that is a FAIL with the gap described.
