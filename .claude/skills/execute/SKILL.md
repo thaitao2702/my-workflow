@@ -106,10 +106,10 @@ Process groups sequentially (A → B → C). Within each group, phases can run i
 1. Use the CLI to mark the phase as in-progress
 2. Use the CLI to read all tasks for the phase
 3. **Analysis gate:** For each component the phase touches (`affected_components` in phase JSON), use the CLI `analysis check --recursive` command:
-   - **`fresh`** → use the CLI `analysis read --level 1` command to get the analysis content for the executor prompt
-   - **`stale`** → use the Skill tool to invoke `/analyze {component-path} --recursive`, then read the fresh doc
+   - **`fresh`** → no action needed
+   - **`stale`** → use the Skill tool to invoke `/analyze {component-path} --recursive`
    - **`missing`** → use the Skill tool to invoke `/analyze {component-path} --recursive`
-4. After all analysis docs are confirmed current: collect them for the executor prompt
+4. After all analysis docs are confirmed fresh: collect their **paths** for the executor prompt (`{component_analysis_paths}`). Do NOT read analysis content in the main session — subagents load files themselves per the "paths, not content" contract.
 
 #### Step 2b: Phase Execution
 
@@ -124,6 +124,11 @@ Read the prompt template: `.claude/skills/execute/executor-prompt.md`
 - **Persist discoveries:** For each row in `## Discoveries`, call `state add-discovery {phase_num} {component} "{what}" "{why}" "{risk}" "{test_suggestion}" {category} --plan-dir $PLAN_DIR`
 - **Persist decisions:** For each row in `## Decisions`, call `state add-decision {phase_num} {component} "{decision}" "{reasoning}" "{alternatives}" --plan-dir $PLAN_DIR`
 - Read `## Result` → `**Files Changed**` for the reviewer, `**Tests Written/Passing**` for verification
+- **Capture public interfaces (conditional):** If the phase JSON has non-empty `interface_contracts`:
+  1. Parse the executor's `## Public Interfaces` section
+  2. For each contract reported: match the contract ID to the phase's `interface_contracts[].id` and store the full interface block (contract ID, class name, file path, signature)
+  3. These stored interfaces are forwarded to consuming phases — see "Interface forwarding" below
+  - If the executor's output is missing `## Public Interfaces` but the phase has `interface_contracts`: escalate to user — "Phase {N} was expected to report public interfaces for {contract IDs} but did not. The consuming phases need these interfaces. Re-run the phase or provide the interfaces manually?"
 
 The executor handles task-level state tracking internally:
 - Marks each task active before starting it
@@ -131,6 +136,16 @@ The executor handles task-level state tracking internally:
 - If it hits a blocker, it stops and reports — the orchestrator handles error recovery
 
 **Why per-phase, not per-task:** Each subagent spawn costs ~4000 tokens of context. A 4-task phase costs 16,000 tokens with per-task spawning vs 4,000 tokens per-phase. The executor also builds naturally on its own work — no re-reading files it just created.
+
+**Interface forwarding:**
+
+When spawning an executor for a phase that consumes cross-phase interfaces (its task descriptions reference contracts from other phases):
+
+1. Collect all interface blocks captured from the producing phases
+2. Assemble them into the `{received_interfaces}` placeholder — each interface block includes: contract ID + class name (with source phase), file path, and language-specific public method signatures
+3. Pass as `{received_interfaces}` in the executor prompt
+
+If a referenced contract was not captured (producing phase failed or didn't report it): escalate to user before spawning the consuming phase's executor.
 
 #### Step 2b.1: Test Execution Gate (conditional)
 

@@ -19,6 +19,7 @@ Each row names a `{placeholder}` and where to get its value. Collect all before 
 | `{code_quality_rule_paths}` | Paths to `.workflow/rules/code/*.md` files (if any) + `.claude/rules/quality-criteria.md` |
 | `{tdd_policy_path}` | `.claude/rules/tdd-policy.md` — pass path only |
 | `{user_directives}` | Active user directives from checkpoint fields. Bulleted list. Omit section if none. |
+| `{received_interfaces}` | Interface reports from earlier phases' executors (captured by orchestrator). Format: deterministic markdown. `None` if this phase consumes no cross-phase interfaces. |
 
 ## For Subagent — Prompt to Pass
 
@@ -69,6 +70,10 @@ After loading, reference from context. Only make additional reads for files disc
 {user_directives}
 Instructions from the user during this execution. These override default assumptions where applicable.
 
+**Received Interfaces:** *(include only if this phase consumes cross-phase interfaces)*
+{received_interfaces}
+These are the actual public interfaces produced by earlier phases. Use the exact class names, method names, and signatures shown here when importing or calling these modules. Do not invent alternative names or signatures — these are the implemented reality.
+
 ## Output Format
 
 **CRITICAL:** The main session only receives your final text output — it does NOT see your tool calls, file reads, or reasoning. Everything the orchestrator needs must be in this report. Follow this format exactly.
@@ -91,6 +96,18 @@ Instructions from the user during this execution. These override default assumpt
 | {task-id} | {path} | {what was decided} | {why} | {what else was considered} |
 
 Only report decisions where the reasoning is NOT self-evident from the code. If someone reading the code would naturally ask "why was it done this way instead of the obvious alternative?", that's a decision worth reporting.
+
+## Public Interfaces
+*(include only if this phase has `interface_contracts` declared in its phase JSON)*
+
+For each contract declared in this phase's `interface_contracts`:
+
+### contract-{NN}: {ClassName}
+**File:** {actual file path where the class/module was created}
+**Signature:**
+{class/module signature — public methods only, no bodies, language-appropriate syntax}
+
+Report every contract listed in this phase's `interface_contracts`. Use the exact contract ID from the phase JSON. Include only public methods — no private helpers, no method bodies, no internal implementation details.
 
 ## Discoveries
 | Component | What | Why | Risk | Test Suggestion | Category |
@@ -121,4 +138,5 @@ Only report non-obvious findings — behaviors where someone reading the public 
 | `## Decisions` | Table: Task, Decision, Reasoning | Context for reviewer, inform doc-update |
 | `## Discoveries` | Table: Component, What, Why, Risk, Test Suggestion, Category | Persist via CLI `state add-discovery`. Category enum: `hidden_behavior`, `wrong_assumption`, `edge_case`, `integration_gotcha` |
 | `## Decisions` | Table: Task, Component, Decision, Reasoning, Alternatives | Persist via CLI `state add-decision`. Only non-obvious decisions where code doesn't explain the rationale. |
+| `## Public Interfaces` | Per contract: ID, class name, file path, signature | Capture and forward to consuming phases' executor prompts as `{received_interfaces}` |
 | `## Escalations` | Table: Type, Task, Description | Handle before proceeding. Type enum: `blocker`, `ambiguity`, `scope_mismatch` |
