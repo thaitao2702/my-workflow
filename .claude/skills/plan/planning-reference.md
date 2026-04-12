@@ -1,6 +1,6 @@
 # Planning Reference
 
-Principles and constraints governing plan design (Steps 5-7). Loaded at Phase C entry.
+Principles, decision classification, approach evaluation, and generation constraints governing plan design (Steps 5-7). Loaded at Phase C entry.
 
 ---
 
@@ -110,6 +110,64 @@ Bad:
   "Receives helper instances via constructor injection." Phase 3 task-01 says:
   "Implement bridge helper with async wrappers." Neither declares the dependency.
   Agents invent independently.
+
+---
+
+## Problem Decomposition
+
+### Decision Classification
+
+Every implementation decision during planning falls into one of three categories. Classify before branching — this prevents wasted analysis on decisions that don't need it.
+
+| Category | When to Apply | Action |
+|----------|--------------|--------|
+| **Constrained** | Project stack, codebase convention, or external requirement predetermines the answer | Note the constraint source. No branching. |
+| **Conventional** | One obvious best-practice approach exists; no meaningful alternatives for this context | Note the convention. No branching. |
+| **Significant** | Multiple viable approaches exist AND the choice is hard to reverse AND it cascades into phase-level changes | Generate 2-3 approaches, evaluate, select. |
+
+**The 3-question filter for "significant":**
+1. **Viable alternatives exist?** — Is the project/codebase NOT already committed to one approach?
+2. **Hard to reverse?** — Would switching later require rework across multiple tasks/phases?
+3. **Cascading impact?** — Does the choice change the phase structure, add/remove tasks, or alter dependencies?
+
+All three must be YES to classify as significant. If any is NO → constrained or conventional.
+
+**Cascade check:** Before classifying as constrained/conventional, trace the implication chain. A seemingly obvious tool choice (e.g., "use Express") may cascade into architectural consequences (single-threaded → need worker threads for CPU-intensive work → new task/phase). If the chain reaches the phase level, the decision is significant regardless of how "obvious" the initial choice appeared.
+
+Signals for each category:
+- **Constrained:** "The project already uses X", "The requirement specifies X", "The existing codebase does X everywhere"
+- **Conventional:** "The standard approach for this is X with no competing standard in this context", "The codebase has an established pattern for this"
+- **Significant:** "We could do X or Y, and they lead to different architectures", "This choice affects what downstream components look like"
+
+### Approach Evaluation Format
+
+For significant decisions only. Compact table — enough to force real consideration, not so heavy that it bogs down planning.
+
+```
+**Approach evaluation: [decision name]**
+| Approach | What | Key Trade-off | Fit |
+|----------|------|---------------|-----|
+| [name] | [1-line description] | [main pro vs con for THIS project] | [why it fits or doesn't given project context] |
+| [name] | [1-line description] | [main pro vs con for THIS project] | [why it fits or doesn't given project context] |
+
+**Selected:** [approach] — [1-line rationale referencing the trade-offs above]
+```
+
+Rules:
+- **Max 3 approaches** per decision. If you see more, decompose the decision into sub-decisions or you're operating at the wrong abstraction level.
+- **Strategically different.** Approaches must differ in architecture, strategy, or system structure — not just in tool choice within the same strategy. Test: "Would these produce different phase structures?" If no, they're not different enough.
+- **"Selected" is mandatory.** No open-ended "it depends" — commit with rationale. If you genuinely can't decide, that's an escalation to the user in Step 6, not an open option.
+- **Project-contextual.** Trade-offs are evaluated against THIS project's constraints, not in the abstract. "Faster but harder to maintain" means nothing without the project's performance requirements and team context.
+
+### Decide-Then-Descend Rule
+
+Each decomposition layer fully commits its decisions before the next layer begins. The output of every decision point is a single selected approach with rationale — not an open option set. Subsequent layers operate within the committed selections.
+
+This prevents combinatorial explosion:
+- **With commitment:** 3 decisions × 3 options each = 3+3+3 = **9 evaluations** (sum)
+- **Without commitment:** 3 decisions × 3 options each = 3×3×3 = **27 combinations** (product)
+
+The rule: after outputting "**Selected:** [approach]" for a decision, all subsequent analysis assumes that selection. If a later layer reveals the selection was wrong, surface it as an escalation in Step 6 — don't silently carry multiple branches.
 
 ---
 

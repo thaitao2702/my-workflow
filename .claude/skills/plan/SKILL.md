@@ -24,6 +24,8 @@ You are creating a detailed, dependency-aware, quality-checked execution plan. T
 
 **Plan Architecture:** phased execution plan, dependency graph (DAG), parallel execution group, task granularity (coherent unit), phase sizing (one-agent-session), mission briefing (plan summary), acceptance criteria (verifiable-by-running)
 
+**Problem Decomposition:** capability decomposition (MECE), decision classification (constrained/conventional/significant), decide-then-descend, cascade check, approach evaluation, commitment point, combinatorial pruning
+
 **Component Intelligence:** analysis doc freshness (fresh/stale/missing), progressive loading level (0/1/2), component role classification (Modified/Extended/Consumed/Created), analysis gate, knowledge layer
 
 **Quality Assurance:** plan review (13-dimension evaluation), direction checkpoint (Step 6), revision round (max 2), automated review before user review
@@ -42,11 +44,23 @@ You are creating a detailed, dependency-aware, quality-checked execution plan. T
 
 ### Skipped Direction Checkpoint
 - **Detection:** Full plan JSON written without presenting a direction summary to the user first. User sees the complete plan as the first output.
-- **Resolution:** Always produce a brief direction summary (Step 5) and get user approval (Step 6) before writing plan files (Step 7). Catching directional mistakes early is cheap; rewriting a reviewed plan is expensive.
+- **Resolution:** Always complete the full decomposition (Steps 5a-5d) and get user approval (Step 6) before writing plan files (Step 7). Catching directional mistakes early is cheap; rewriting a reviewed plan is expensive.
 
 ### Undefined Cross-Phase Interface
 - **Detection:** Phase X's task says "calls the bridge helper" or "receives helpers via injection" but neither Phase X nor the defining phase declares the dependency in `interface_contracts`. Two independent executor agents will have no coordination, and the consuming agent won't receive the producing agent's interface.
 - **Resolution:** Identify every cross-phase code dependency — any place where Phase X's code imports or calls Phase Y's code. For each: (1) Add an `interface_contracts` entry on the defining phase (the provider) with contract ID, expected class name, purpose, and consumed_by_phases. (2) Ensure the producing phase is in an earlier execution group than all consuming phases (sequential enforcement). (3) In the consuming phase's task description, reference the contract: "Receives BridgeHelper (Phase 3 contract-01)." Private and internal functions within a single phase do not need declarations — they are the executor's domain.
+
+### False Options
+- **Detection:** Generated alternatives differ in ways that don't change any phase, task, or dependency in the plan. The choice may be real but belongs at implementation time, not planning time. Example: "Express vs Fastify" for a simple CRUD API where both produce identical plan structure.
+- **Resolution:** Before treating a choice as a planning-level decision, trace the cascade — does switching between options change the phase structure, add/remove tasks, or alter dependencies? If no → note as an implementation recommendation in the task description, not a planning decision. If yes (e.g., Express → Node → single-threaded → need worker threads for CPU-intensive export → new task/phase) → it IS a planning-level decision requiring approach evaluation.
+
+### Premature Branching
+- **Detection:** Generating approach options for decisions that are already constrained (project uses X) or conventional (obvious best practice). Wastes tokens and creates false rigor.
+- **Resolution:** Apply the decision classification filter before generating options. If the project already uses a framework, if the codebase already has an established pattern, or if only one viable approach exists — classify as constrained or conventional and move on. Only generate alternatives for significant decisions.
+
+### Uncommitted Descent
+- **Detection:** Proceeding to phase composition or the next capability while carrying multiple open approaches from a previous decision. Causes combinatorial explosion — 3 open decisions × 3 options = 27 implicit plan variants the agent tries to hold in working memory.
+- **Resolution:** Each significant decision must end with "**Selected:** [approach] — [rationale]" before proceeding to the next capability or to phase composition. The next step operates within committed selections only.
 
 ## Phase A: Requirement Gathering
 
@@ -168,17 +182,82 @@ Only non-obvious findings — not "the function exists" but "the analysis doc sa
 
 You design the plan directly — no subagent delegation. All context from Phases A-B is already in your session.
 
-**Read `.claude/skills/plan/planning-reference.md` now.** It contains the planning principles and generation constraints that govern Steps 5-7. Apply them during direction design (Step 5) and plan writing (Step 7).
+**Read `.claude/skills/plan/planning-reference.md` now.** It contains the planning principles, decision classification guide, and generation constraints that govern Steps 5-7. Apply them throughout Phase C.
 
-### Step 5: Design Plan Direction
+### Step 5: Problem Decomposition & Approach Design
 
-Design the plan using:
-- Gathered context (requirements, clarification answers — already in your session)
-- Component analysis (`.analysis.md` artifacts verified in Step 4b)
-- Project overview (`.workflow/project-overview.md`)
-- Planning principles (loaded from `planning-reference.md`)
+Design the plan through layered reasoning — decompose first, then analyze each piece, then compose into phases. Process one layer at a time; commit decisions before descending to the next layer.
 
-Produce a **brief direction summary**:
+#### Step 5a: Capability Decomposition
+
+From requirements + clarification answers + component intelligence, identify the distinct capabilities this plan needs to deliver. Each capability is an independent functional unit that delivers user-visible or system-visible value.
+
+Output a numbered list, one capability per line with a brief description:
+
+```
+### Capabilities
+1. [Capability name] — [what it does, one line]
+2. [Capability name] — [what it does, one line]
+3. ...
+```
+
+Rules:
+- Aim for MECE (mutually exclusive, collectively exhaustive) — no overlaps, no gaps
+- Each capability should be describable in one sentence
+- If a requirement maps to a single obvious capability, that's fine — not everything needs decomposition
+- If you identify more than 7 capabilities, group related ones into domains first
+
+**Complexity gate:** If there is only 1-2 capabilities with obvious approaches (no significant architectural decisions), collapse Steps 5b-5c into a brief note: "Approach: [description], follows existing [convention/pattern]" — then skip directly to Step 5d.
+
+#### Step 5b: Per-Capability Analysis & Approach Selection
+
+Process capabilities **one at a time**. Output the full analysis for each capability before moving to the next. This forces step-by-step reasoning and prevents combinatorial explosion.
+
+**For each capability, output this block:**
+
+```
+### Capability N: [Name]
+
+**Core problem:** [What's the actual technical challenge? 1-2 sentences]
+
+**Decisions:**
+| Decision | Classification | Rationale |
+|----------|---------------|-----------|
+| [what needs deciding] | Constrained / Conventional / Significant | [why this classification — cite constraint source, convention, or the cascade that makes it significant] |
+
+[IF significant decisions exist:]
+
+**Approach evaluation: [decision name]**
+| Approach | What | Key Trade-off | Fit |
+|----------|------|---------------|-----|
+| [name] | [1-line description] | [main pro vs con] | [fit with project context] |
+| [name] | [1-line description] | [main pro vs con] | [fit with project context] |
+
+**Selected:** [approach] — [1-line rationale]
+
+**Committed approach:** [1-line summary of how this capability will be built]
+```
+
+Rules:
+- **Decide-then-descend:** the "Selected" and "Committed approach" lines are mandatory before moving to the next capability. No open options carried forward.
+- **Classify before branching:** apply the decision classification filter (see `planning-reference.md`) to every decision. Only significant decisions get approach evaluation.
+- **Cascade check:** before classifying a decision as constrained/conventional, trace its implications — does the choice cascade into phase-level changes? If yes, it's significant regardless of how "obvious" it seems.
+- **Max 3 approaches** per significant decision. If you see more, you're decomposing at the wrong level.
+- Later capabilities can reference earlier committed decisions: "Given Cap 1's selection of [X], this constrains the approach to..."
+
+#### Step 5c: Phase Composition
+
+All capabilities have committed approaches. Now compose them into phases:
+
+1. **Group capabilities into phases** — by cohesion, dependency order, and parallel safety. A single capability may span multiple phases if it has natural sequential stages.
+2. **Identify integration tasks** — what connects the capabilities at runtime? If Phase A produces an artifact that Phase B consumes, there must be a task that wires them. Don't assume integration happens by itself.
+3. **Trace end-to-end flow** — from user action through all phases to system response. Every transition must be covered by a task. Gaps here = gaps in the plan.
+4. **Check dependency ordering** — producers before consumers, no circular deps, interface dependencies enforce sequential groups.
+
+#### Step 5d: Direction Summary
+
+Synthesize the decomposition into a **direction summary** for user validation:
+
 - Plan name and scope
 - Number of phases and total tasks
 - Phase overview with dependency groups and key dependencies
@@ -189,7 +268,11 @@ Produce a **brief direction summary**:
   User Action → API Endpoint (Ph2) → Permission Check (Ph3) → CSV Serializer (Ph1) → Stream Response (Ph2)
   ```
 
-- Key architectural decisions that shaped the plan
+- **Key decisions table** (significant decisions only):
+  ```
+  | Decision | Options Considered | Selected | Rationale |
+  |----------|-------------------|----------|-----------|
+  ```
 - Top risks
 
 Do NOT produce full JSON at this point — just the direction for user validation.
@@ -201,9 +284,9 @@ The user understands the requirements better than any agent — catching directi
 1. Present the direction summary to the user
 2. Ask: "Does this direction look right? Approve to proceed, or tell me what to change."
 3. If user wants changes:
-   - Incorporate the feedback — adjust phases, scope, dependencies, or architecture as needed
-   - Produce an updated direction summary (same format as Step 5 output)
-   - Present it to the user and ask again
+   - If the user disagrees with a key decision from the table, re-enter Step 5b for that specific capability only — don't redo the entire analysis
+   - For structural changes (add/remove phases, change grouping), revise Step 5c-5d
+   - Present the updated direction summary and ask again
    - Repeat until user approves direction
 4. If user approves: proceed to Step 7
 
