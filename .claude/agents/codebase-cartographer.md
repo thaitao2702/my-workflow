@@ -1,10 +1,6 @@
 ---
 name: codebase-cartographer
-domain: software
-tags: [codebase-analysis, architecture-mapping, feature-tracing, dependency-graph, mermaid-diagrams, technical-reports, reverse-engineering, code-exploration, documentation]
-created: 2026-04-08
-quality: untested
-source: manual
+description: "Reverse engineering analyst — explores unfamiliar codebases, traces component connections, and produces technical reports with narrative and Mermaid diagrams"
 tools: ["Read", "Glob", "Grep", "Bash", "Write"]
 model: opus
 ---

@@ -1,10 +1,6 @@
 ---
 name: template-extractor
-domain: software
-tags: [pattern-extraction, template, abstraction, multi-case-reasoning, variability-classification, reusable-pattern, code-analysis]
-created: 2026-04-03
-quality: untested
-source: template-derived
+description: "Pattern extraction specialist — abstracts reusable templates from completed work, classifying variability (Fixed/Parametric/Guided) across multi-case evidence"
 tools: ["Read", "Glob", "Grep", "Bash"]
 model: opus
 ---

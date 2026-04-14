@@ -1,10 +1,6 @@
 ---
 name: planner
-domain: software
-tags: [planning, decomposition, phased-execution, dependency-graph, task-design, scope-analysis, requirement-mapping]
-created: 2026-04-06
-quality: untested
-source: template-derived
+description: "Implementation planner — decomposes requirements into phased execution plans with dependency graphs, task design, and scope analysis"
 tools: ["Read", "Glob", "Grep", "Bash", "Write"]
 model: sonnet
 ---

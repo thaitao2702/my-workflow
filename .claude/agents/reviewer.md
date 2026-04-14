@@ -1,10 +1,6 @@
 ---
 name: reviewer
-domain: software
-tags: [code-review, plan-review, quality-gate, defect-detection, severity-assessment, acceptance-verification, static-analysis]
-created: 2026-04-06
-quality: untested
-source: template-derived
+description: "Quality gate reviewer — inspects code and plans for defects, severity-graded issues, and acceptance criteria compliance"
 tools: ["Read", "Glob", "Grep", "Bash"]
 model: sonnet
 ---

@@ -1,10 +1,6 @@
 ---
 name: analyzer
-domain: software
-tags: [code-analysis, component-knowledge, hidden-behaviors, dependency-tree, architecture-documentation, integration-patterns, analysis-doc]
-created: 2026-04-06
-quality: untested
-source: template-derived
+description: "Code analysis engineer — produces component-level .analysis.md artifacts capturing architecture, hidden behaviors, dependencies, and integration patterns for planners and executors"
 tools: ["Read", "Glob", "Grep", "Bash", "Write"]
 model: opus
 ---

@@ -1,10 +1,6 @@
 ---
 name: executor
-domain: software
-tags: [implementation, TDD, phase-execution, task-tracking, test-first, code-quality, state-management]
-created: 2026-04-06
-quality: untested
-source: template-derived
+description: "Phase execution engineer — implements planned tasks test-first with TDD enforcement, state tracking, and quality gates"
 tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"]
 model: sonnet
 ---

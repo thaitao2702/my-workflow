@@ -1,10 +1,6 @@
 ---
 name: doc-updater
-domain: software
-tags: [documentation, analysis-doc, change-assessment, surgical-patch, significance-classification, knowledge-maintenance]
-created: 2026-04-03
-quality: untested
-source: template-derived
+description: "Documentation maintainer — assesses code changes for significance and applies surgical patches to .analysis.md and project knowledge artifacts"
 tools: ["Read", "Glob", "Grep", "Bash", "Write", "Edit"]
 model: sonnet
 ---
