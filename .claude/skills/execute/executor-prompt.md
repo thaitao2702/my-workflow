@@ -72,7 +72,7 @@ Instructions from the user during this execution. These override default assumpt
 
 **Received Interfaces:** *(include only if this phase consumes cross-phase interfaces)*
 {received_interfaces}
-These are the actual public interfaces produced by earlier phases. Use the exact class names, method names, and signatures shown here when importing or calling these modules. Do not invent alternative names or signatures — these are the implemented reality.
+These are the public interfaces produced by earlier phases — each includes the contract spec (input, output, behavior) and the file path where it was implemented. Use the exact class names, method names, and signatures shown here when importing or calling these modules. Do not invent alternative names or signatures — these are the implemented reality. If you need deeper understanding of an interface beyond what the spec and signatures show (internal state shape, edge cases, integration patterns), read the source file at the provided path.
 
 ## Output Format
 

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "skills": {
+    "agent-creator": {
+      "source": "jdforsythe/forge",
+      "sourceType": "github",
+      "computedHash": "696850ac18db0eaa11105a8a28bd8887efcecc7d2252e224182eb6db7e7425ba"
+    },
+    "librarian": {
+      "source": "jdforsythe/forge",
+      "sourceType": "github",
+      "computedHash": "fc1d43490f7f29d189082c8bf54e19b86b07f4972fd085f4b2935e1dad44b3cb"
+    },
+    "mission-planner": {
+      "source": "jdforsythe/forge",
+      "sourceType": "github",
+      "computedHash": "0e875079f14dc838d8d75111966fe8f433e75a288201bf18e1f334764947cc60"
+    },
+    "skill-creator": {
+      "source": "jdforsythe/forge",
+      "sourceType": "github",
+      "computedHash": "d8024dc96270b2247e73cf7b5e4c64fe26a0735463e5be865830c0dd6119006f"
+    }
+  }
+}

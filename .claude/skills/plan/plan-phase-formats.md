@@ -85,8 +85,25 @@ Format specifications for `plan.json` and `phase-{N}.json`. Loaded at Step 7 (Wr
       "id": "contract-01",
       "name": "UserModel",
       "description": "User data model with account isolation",
+      "file": "src/models/user.ts",
       "defined_in_task": "task-01",
-      "consumed_by_phases": [2, 3]
+      "consumed_by_phases": [2, 3],
+      "interfaces": [
+        {
+          "name": "UserModel",
+          "type": "TypeScript class",
+          "input": "{ email: string, role: UserRole, accountId: string }",
+          "output": "User instance with account-scoped queries",
+          "behavior": "All queries are automatically scoped to the user's accountId via RLS. Calling findAll() only returns users within the same account."
+        },
+        {
+          "name": "UserRole",
+          "type": "TypeScript enum",
+          "input": "N/A",
+          "output": "'admin' | 'editor' | 'viewer'",
+          "behavior": "Used by permission checks in consuming phases. 'admin' bypasses all permission gates."
+        }
+      ]
     }
   ]
 }
@@ -109,9 +126,16 @@ Format specifications for `plan.json` and `phase-{N}.json`. Loaded at Step 7 (Wr
 - `acceptance_specs[].traces_to`: Array of task-ids whose combined implementation satisfies this spec. For requirement traceability.
 - `acceptance_specs[].verification_type`: `functional` (run + check output) | `structural` (code pattern must exist) | `behavioral` (system exhibits behavior under scenario)
 - `acceptance_specs[].verify_by`: Concrete verification scenario. Must enable unambiguous PASS/FAIL determination. Framework-agnostic — no test framework syntax. In test mode this guides what test code to write; in reason mode this is the reasoning target.
-- `interface_contracts[]`: Required only when this phase produces public APIs consumed by other phases. Omit entirely if the phase has no cross-phase consumers. Signatures are NOT included at plan time — they are captured from executor output during execution and forwarded by the orchestrator.
+- `interface_contracts[]`: Required only when this phase produces public APIs consumed by other phases. Omit entirely if the phase has no cross-phase consumers.
 - `interface_contracts[].id`: Unique within the phase. Format: `contract-NN` (e.g., contract-01, contract-02).
 - `interface_contracts[].name`: Expected class or module name. A planning-level coordination name — the executor should use this name unless there is a strong reason to deviate.
 - `interface_contracts[].description`: One-line purpose description.
+- `interface_contracts[].file`: Expected file path where this interface will be created. Gives consuming executors a concrete location to read for deeper implementation detail.
 - `interface_contracts[].defined_in_task`: The task ID within this phase that creates this class or module.
 - `interface_contracts[].consumed_by_phases`: Array of phase numbers that import or call this interface. Used by the reviewer to verify sequential ordering and cross-references.
+- `interface_contracts[].interfaces`: Array of interface specs — one entry per public function, class, action, or component that consumers will use. Each entry has:
+  - `name`: function/class/action/component name
+  - `type`: what kind of interface (e.g., "Redux action creator", "TypeScript class", "React component", "utility function")
+  - `input`: parameters, props, or arguments the consumer passes
+  - `output`: return value, state mutation, rendered output, or side effect
+  - `behavior`: what happens when called — focus on behavior the consumer needs to know, not internal implementation. Include conditional behavior, edge cases, and constraints that affect how consumers use it.

@@ -93,23 +93,27 @@ Before planning, check if an existing template matches these requirements:
 
 ### Step 3: Clarification
 
-Analyze requirements for gaps and ambiguities. **Think deeply before asking — don't ask surface-level questions.**
+Analyze requirements for gaps and ambiguities. The structured self-check below forces depth — do not skip categories.
 
 1. Read `.workflow/project-overview.md` for architectural context
 
-2. **Self-check before generating questions.** Ask yourself:
-   - Are there implicit requirements the user assumes but didn't state? (auth, validation, error handling, permissions)
-   - What data sources, dependencies, or external systems are needed but not mentioned?
-   - What scenarios would break this? What are the unhappy paths and edge cases?
-   - Where does this feature's scope END? What's explicitly NOT included?
+2. **Self-check before generating questions.** Output this table — every row must be filled (use "None identified" only after genuine analysis):
 
-3. Generate specific, concrete clarification questions based on the self-check. Examples:
-   - "The export feature — should it support CSV only, or also Excel/PDF?"
-   - "When the payment fails, should the order stay pending or be cancelled?"
-   - NOT: "Can you tell me more about the requirements?" (too open-ended)
+   **Self-Check Findings:**
+   | Gap Category | Concrete Gap Identified | Generated Question (or "None") |
+   |--------------|------------------------|-------------------------------|
+   | Implicit requirements (auth, validation, error handling, permissions) | [what's assumed but unstated] | [specific question] |
+   | Data sources / dependencies / external systems | [what data/system is needed but unmentioned] | [specific question] |
+   | Unhappy paths / edge cases | [what scenario would break this] | [specific question] |
+   | Scope boundaries | [what's explicitly NOT included] | [specific question] |
+
+3. Generate clarification questions from the table's "Generated Question" column above. Drop "None" rows. Apply this phrasing rule:
+   - Specific and concrete: "Should the export feature support CSV only, or also Excel/PDF?" — good
+   - Decision-forcing: "When the payment fails, should the order stay pending or be cancelled?" — good
+   - NOT open-ended: "Can you tell me more about the requirements?" — bad
 
 4. Present questions to user, wait for answers
-5. Loop until no more genuine gaps (max 3 clarification rounds)
+5. Loop until no more genuine gaps (max 3 clarification rounds). On each new round, re-output the Self-Check Findings table with updated rows reflecting what the user's answers resolved and what new gaps surfaced.
 
 6. **After clarification rounds complete**, check if the user corrected any assumptions that contradict existing documentation. If so, record them:
 
@@ -123,7 +127,7 @@ Only record corrections where existing documentation (analysis docs, project-ove
 
 If no corrections: write "None" under the table header.
 
-If after self-check you have no real questions — requirements are clear and complete — skip directly to Phase B.
+If every row of the Self-Check Findings table is "None identified" — requirements are clear and complete — skip directly to Phase B.
 
 ## Phase B: Component Intelligence Gathering
 
@@ -141,6 +145,7 @@ Browse the codebase (Glob, Grep) to find the specific files and modules involved
 | **Extended** | Adding new features to it |
 | **Consumed** | Calling its API from new code |
 | **Created** | New component, checking similar existing ones |
+
 
 #### Step 4b: Read Component Knowledge (analysis-first)
 
@@ -160,7 +165,25 @@ For each affected component, use the analysis doc as the primary source when it'
    - Consumed components: focus on public API / exports
    - Created components: read source of similar existing components for reference patterns
 
-4. **Note what you learn.** Capture key findings that will shape the plan: constraints, hidden behaviors, integration points, existing patterns to follow. These populate `component_intelligence` in Step 7.
+4. **Capture component findings.** This is the source for `component_intelligence` in Step 7.
+
+   Finding Type values:
+   - `constraint` — limit imposed by the component (size, rate, format, type)
+   - `hidden behavior` — non-obvious runtime behavior not visible from the signature
+   - `integration point` — how this component connects to others (events, callbacks, shared state)
+   - `pattern to follow` — established convention in similar existing components
+
+   Rules:
+   - Every component you read must produce at least one row
+   - Use "No plan-shaping findings — straightforward usage" only after genuine analysis (not as a default)
+   - "How It Shapes the Plan" must reference a concrete plan effect (phase, task, constraint) — not vague "will affect design"
+
+   **Now output the table:**
+
+   **Component Intelligence Findings:**
+   | Component | Finding Type | Finding | How It Shapes the Plan |
+   |-----------|-------------|---------|------------------------|
+   | [path] | constraint / hidden behavior / integration point / pattern to follow | [specific fact, e.g., "clamps date ranges to 90 days silently"] | [e.g., "export feature needs pagination — affects Phase 2 design"] |
 
 5. **Log documentation contradictions.** If you discover anything that contradicts or is missing from existing documentation, log it:
 
@@ -192,15 +215,6 @@ Design the plan through layered reasoning — decompose first, then analyze each
 
 From requirements + clarification answers + component intelligence, identify the distinct capabilities this plan needs to deliver. Each capability is an independent functional unit that delivers user-visible or system-visible value.
 
-Output a numbered list, one capability per line with a brief description:
-
-```
-### Capabilities
-1. [Capability name] — [what it does, one line]
-2. [Capability name] — [what it does, one line]
-3. ...
-```
-
 Rules:
 - Aim for MECE (mutually exclusive, collectively exhaustive) — no overlaps, no gaps
 - Each capability should be describable in one sentence
@@ -209,11 +223,27 @@ Rules:
 
 **Complexity gate:** If there is only 1-2 capabilities with obvious approaches (no significant architectural decisions), collapse Steps 5b-5c into a brief note: "Approach: [description], follows existing [convention/pattern]" — then skip directly to Step 5d.
 
+**Now output a numbered list of capabilities, one per line with a brief description, in this format:**
+
+```
+### Capabilities
+1. [Capability name] — [what it does, one line]
+2. [Capability name] — [what it does, one line]
+3. ...
+```
+
 #### Step 5b: Per-Capability Analysis & Approach Selection
 
 Process capabilities **one at a time**. Output the full analysis for each capability before moving to the next. This forces step-by-step reasoning and prevents combinatorial explosion.
 
-**For each capability, output this block:**
+Rules:
+- **Decide-then-descend:** the "Selected" and "Committed approach" lines are mandatory before moving to the next capability. No open options carried forward.
+- **Classify before branching:** apply the decision classification filter (see `planning-reference.md`) to every decision. Only significant decisions get approach evaluation.
+- **Cascade check:** before classifying a decision as constrained/conventional, trace its implications — does the choice cascade into phase-level changes? If yes, it's significant regardless of how "obvious" it seems. The Cascade Trace cell in the Decisions table must be filled for EVERY decision, not only Significant ones.
+- **Max 3 approaches** per significant decision. If you see more, you're decomposing at the wrong level.
+- Later capabilities can reference earlier committed decisions: "Given Cap 1's selection of [X], this constrains the approach to..."
+
+**Now output the per-capability analysis block in this format (one block per capability):**
 
 ```
 ### Capability N: [Name]
@@ -221,9 +251,9 @@ Process capabilities **one at a time**. Output the full analysis for each capabi
 **Core problem:** [What's the actual technical challenge? 1-2 sentences]
 
 **Decisions:**
-| Decision | Classification | Rationale |
-|----------|---------------|-----------|
-| [what needs deciding] | Constrained / Conventional / Significant | [why this classification — cite constraint source, convention, or the cascade that makes it significant] |
+| Decision | Classification | Cascade Trace | Rationale |
+|----------|---------------|---------------|-----------|
+| [what needs deciding] | Constrained / Conventional / Significant | [implications traced — does this choice change phase structure, add tasks, or alter dependencies? "None — purely local" is valid only after explicit trace] | [why this classification — constraint source / convention / why the cascade makes it significant] |
 
 [IF significant decisions exist:]
 
@@ -238,21 +268,33 @@ Process capabilities **one at a time**. Output the full analysis for each capabi
 **Committed approach:** [1-line summary of how this capability will be built]
 ```
 
-Rules:
-- **Decide-then-descend:** the "Selected" and "Committed approach" lines are mandatory before moving to the next capability. No open options carried forward.
-- **Classify before branching:** apply the decision classification filter (see `planning-reference.md`) to every decision. Only significant decisions get approach evaluation.
-- **Cascade check:** before classifying a decision as constrained/conventional, trace its implications — does the choice cascade into phase-level changes? If yes, it's significant regardless of how "obvious" it seems.
-- **Max 3 approaches** per significant decision. If you see more, you're decomposing at the wrong level.
-- Later capabilities can reference earlier committed decisions: "Given Cap 1's selection of [X], this constrains the approach to..."
-
 #### Step 5c: Phase Composition
 
-All capabilities have committed approaches. Now compose them into phases:
+All capabilities have committed approaches. Compose them into phases, then audit the composition in a single table.
 
-1. **Group capabilities into phases** — by cohesion, dependency order, and parallel safety. A single capability may span multiple phases if it has natural sequential stages.
-2. **Identify integration tasks** — what connects the capabilities at runtime? If Phase A produces an artifact that Phase B consumes, there must be a task that wires them. Don't assume integration happens by itself.
-3. **Trace end-to-end flow** — from user action through all phases to system response. Every transition must be covered by a task. Gaps here = gaps in the plan.
-4. **Check dependency ordering** — producers before consumers, no circular deps, interface dependencies enforce sequential groups.
+1. **Group capabilities into phases** — by cohesion, dependency order, and parallel safety. A single capability may span multiple phases if it has natural sequential stages. Assign each phase to an execution group (A, B, C…). Phases in the same group run in parallel and MUST NOT modify the same files.
+
+2. **Audit the composition.** Identifying integration tasks happens here — Transition rows reveal what wiring tasks must exist.
+
+   Concern Type definitions:
+   - **Transition** — a runtime control or data flow between phases. Every user-action → system-response path must be fully covered by Transition rows. A missing Transition = a gap in the plan.
+   - **External Consumer** — a task modifies an existing interface (function signature, return type, props, API contract, DB schema, config shape, event payload, etc.) and the change could break code outside the plan.
+   - **Group Ordering** — verifies the producer's execution group is strictly earlier than the consumer's, with no circular dependencies.
+
+   Rules for filling this table:
+   - **Transition coverage:** every cross-phase relationship in the runtime flow gets a row. Trace end-to-end from user action to system response — if no Transition row covers a step in that flow, the plan has a gap.
+   - **External Consumer coverage:** every plan task that modifies an existing interface gets a row. Grep for consumers of the **specific** interface being changed — not the entire component. "Backward compatible" requires a concrete reason (e.g., "new optional parameter", "additive enum value"), not just an assertion.
+   - **Group Ordering coverage:** every cross-phase code dependency (Phase X imports, calls, or receives objects created by Phase Y) gets a Group Ordering row. Assign a provisional `interface_contracts` ID (`contract-01`, `contract-02`, …) scoped to the defining phase — Step 7 materializes these as JSON entries using the IDs assigned here. Every Transition row whose producer and consumer phases differ also gets a corresponding Group Ordering row.
+   - **Resolution required:** no row may be left empty. For "GAP", "NEW TASK", "MOVE", or "CIRCULAR" entries, apply the stated action to the phase structure, then re-run the affected rows on the revised structure. Do not proceed to Step 5d until every row reads OK, a wiring task-id, or a concrete backward-compatibility justification.
+
+   **Now output the audit table:**
+
+   **Phase Composition Audit:**
+   | # | Concern Type | Subject | Producer / Source | Consumer / Target | Resolution / Status |
+   |---|--------------|---------|-------------------|-------------------|---------------------|
+   | 1 | Transition | [data or control flow, e.g., "HTTP request body → handler"] | [Phase X / task-N] | [Phase Y / task-M] | [task-id of the wiring task, OR "GAP — add task in Phase Z"] |
+   | 2 | External Consumer | [modified interface + specific change, e.g., "UserService.findById return type now Promise<User \| null>"] | [plan task-N that modifies] | [external file paths from grep, OR "None — no external consumers"] | [one of: "Backward compatible — [concrete reason]" / "Already covered by task-NN" / "NEW TASK: update [files] in Phase X"] |
+   | 3 | Group Ordering | [interface_contracts ID, OR a Transition row's # from above] | [Phase X / Group A] | [Phase Y / Group B] | [OK, OR "MOVE: Phase Y to Group [later]", OR "CIRCULAR: [merge phases / extract shared interface into earlier phase]"] |
 
 #### Step 5d: Direction Summary
 
@@ -304,12 +346,20 @@ Direction approved — now materialize the full plan to disk.
 2. Write `plan.json` with `"status": "draft"` following the plan file format
 3. Write `phase-{N}.json` for each phase following the phase file format
 4. **Write acceptance specs:** For each phase, derive `acceptance_specs` that verify the phase delivers its requirements. Review each phase's tasks against the overall `scope.in_scope` requirements. Every requirement should trace to at least one spec across all phases. Write specs into the phase JSON files. Specs should cover functional correctness — not code quality (that's the reviewer's job).
-5. **Identify and declare cross-phase dependencies:** Scan all phases for cross-phase code dependencies — any place where Phase X's code imports, calls, or receives objects created by Phase Y. For each dependency:
-   a. Identify the **defining phase** (the one that creates the class or module)
-   b. Add an `interface_contracts` entry to that phase's JSON: contract ID, expected class name, purpose description, defined_in_task, consumed_by_phases
-   c. In the **consuming phase's** task description, add a contract reference: "Receives BridgeHelper (Phase 3 contract-01) via constructor injection"
-   d. **Enforce sequential ordering:** verify that the defining phase is in an earlier execution group than ALL consuming phases listed in consumed_by_phases. If not, move the consuming phase to a later group.
-   Only cross-phase interfaces need declarations — internal functions within a single phase are the executor's domain.
+5. **Materialize `interface_contracts` from the Step 5c.2 audit.** Do not re-identify dependencies and do not re-check ordering — the audit is authoritative on both. This step is pure materialization.
+
+   For each Group Ordering row in the 5c.2 audit table, write an `interface_contracts` entry on the **defining phase's** JSON (the Producer phase in the row) following the format in `plan-phase-formats.md`:
+   - `contract_id` — the ID assigned in the audit (e.g., `contract-01`)
+   - Expected class / module name
+   - One-line purpose description
+   - `file` — path where the interface will be created
+   - `defined_in_task` — task-id within the defining phase that creates it
+   - `consumed_by_phases` — list of consuming phase numbers (the Consumer column from the audit)
+   - `interfaces[]` — for each public function, class, action, or component consumers will use, specify: `name`, `type` (Redux action / class / React component / utility function / etc.), `input` (parameters/props/arguments), `output` (return value, state mutation, side effect), `behavior` (what happens when called, including conditional behavior, edge cases, and consumer-visible constraints)
+
+   In each **consuming phase's** task description, add a contract reference: "Receives BridgeHelper (Phase 3 contract-01) via constructor injection."
+
+   The interface specs are the contract between producer and consumer — the producing executor implements to this spec, the consuming executor integrates based on it. If the consumer needs deeper detail, the `file` path gives it a location to read. Internal functions within a single phase remain the executor's domain — they do not appear here.
 6. Use the CLI to read back the plan and verify files written correctly
 
 ## Phase D: Quality Review

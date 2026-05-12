@@ -142,10 +142,15 @@ The executor handles task-level state tracking internally:
 When spawning an executor for a phase that consumes cross-phase interfaces (its task descriptions reference contracts from other phases):
 
 1. Collect all interface blocks captured from the producing phases
-2. Assemble them into the `{received_interfaces}` placeholder — each interface block includes: contract ID + class name (with source phase), file path, and language-specific public method signatures
-3. Pass as `{received_interfaces}` in the executor prompt
+2. For each contract, also read the planned interface specs from the producing phase's `interface_contracts[].interfaces[]` in its phase JSON — these provide behavioral context (input, output, behavior) that signatures alone don't convey
+3. Assemble them into the `{received_interfaces}` placeholder. For each contract include:
+   - Contract ID + class name (with source phase)
+   - File path (so the consuming executor can read the source for deeper detail)
+   - Planned interface specs: input, output, behavior for each public function/class/action
+   - Actual signatures captured from the producing executor's `## Public Interfaces` output
+4. Pass as `{received_interfaces}` in the executor prompt
 
-If a referenced contract was not captured (producing phase failed or didn't report it): escalate to user before spawning the consuming phase's executor.
+If a referenced contract was not captured (producing phase failed or didn't report it): fall back to the planned interface specs from the phase JSON and include the file path. The consuming executor can read the file directly. Log a warning: "Phase {N} contract {ID} — using planned specs, actual signatures not captured."
 
 #### Step 2b.1: Test Execution Gate (conditional)
 

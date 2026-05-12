@@ -90,26 +90,41 @@ Each phase is implemented by an independent executor agent with no shared contex
 - Contract ID (unique within phase)
 - Expected class or module name
 - One-line purpose description
+- Expected file path where the interface will be created
 - Which task defines it
 - Which phases consume it
+- **Interface specs:** For each public function, class, action, or component that consumers will use:
+  - `name` — function/class/action/component name
+  - `type` — what kind (Redux action, class, React component, utility function, etc.)
+  - `input` — parameters, props, or arguments
+  - `output` — return value, state mutation, side effect
+  - `behavior` — what happens when called, including conditional behavior, edge cases, and constraints that affect consumers
 
-**What it does NOT contain at plan time:** method signatures, parameter types, return types. These are determined by the executor during implementation and forwarded by the orchestrator to consuming phases.
+The interface specs are the **contract** between producer and consumer. The producing executor implements to this spec. The consuming executor integrates based on it. If the consumer needs deeper understanding (internal state shape, edge cases not covered in the spec), the file path gives it a concrete location to read.
 
 **Where declarations live:** In the `interface_contracts` field of the phase that DEFINES the interface (the provider). The consuming phase's task description references the contract by phase number and contract ID.
 
 **The rule of thumb:** Called only within the same phase → private, no declaration needed. Called from another phase → dependency, declaration required.
 
 Good:
-  Phase 3 declares BridgeHelper in interface_contracts with name, purpose, and
-  consumed_by_phases: [2, 4]. Phase 3 is in Group A, Phase 2 is in Group B.
+  Phase 3 declares BridgeHelper in interface_contracts with name, file path,
+  consumed_by_phases: [2, 4], and interface specs listing each public method
+  with input/output/behavior. Phase 3 is in Group A, Phase 2 is in Group B.
   Phase 2 task-02 says: "Receives BridgeHelper (Phase 3 contract-01) via
-  constructor injection."
+  constructor injection." The executor reads the contract spec to know the
+  expected interface, and reads the file for implementation detail if needed.
 
 Bad:
   Phase 2 and Phase 3 are in the same parallel group. Phase 2 task-02 says:
   "Receives helper instances via constructor injection." Phase 3 task-01 says:
   "Implement bridge helper with async wrappers." Neither declares the dependency.
   Agents invent independently.
+
+Also bad:
+  Phase 3 declares a contract with only name and description — no interface
+  specs. Phase 2's executor receives the contract reference but has no idea
+  what methods exist, what they accept, or how they behave. It guesses or
+  reads source hoping to find something recognizable.
 
 ---
 
