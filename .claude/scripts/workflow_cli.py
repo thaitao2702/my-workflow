@@ -29,6 +29,8 @@ Usage:
   workflow-cli state set FIELD VALUE [--plan-dir DIR]
   workflow-cli state add-discovery PHASE_N COMPONENT WHAT WHY RISK TEST CATEGORY [--plan-dir DIR]
   workflow-cli state add-decision PHASE_N COMPONENT DECISION REASONING [ALTERNATIVES] [--plan-dir DIR]
+  workflow-cli state set-interface-actual PHASE_N CONTRACT_ID JSON_PAYLOAD [--plan-dir DIR]
+  workflow-cli state get-interface-actual PHASE_N CONTRACT_ID [--plan-dir DIR]
   workflow-cli state get-discoveries [--plan-dir DIR]
   workflow-cli state get-decisions [--plan-dir DIR]
 
@@ -780,6 +782,58 @@ def cmd_state_add_decision(plan_dir: Path, phase_num: int, component: str,
     })
     _save_state(plan_dir, state)
     print(json.dumps({"added": "decision", "phase": phase_num, "component": component}))
+
+
+def cmd_state_set_interface_actual(plan_dir: Path, phase_num: int, contract_id: str, payload_json: str):
+    """Persist the realized interface for a (phase, contract) pair.
+
+    The producing executor calls this after implementing a contract-defining task.
+    Storage: state.json under ``interfaces_actual``, keyed by ``"phase:contract_id"``.
+    Idempotent — calling twice for the same key replaces the prior entry.
+    Payload schema: ``{"signature": str, "usage_example": str, "error_shape": str}``.
+    """
+    try:
+        payload = json.loads(payload_json)
+    except json.JSONDecodeError as e:
+        raise CLIError(f"JSON_PAYLOAD is not valid JSON: {e}")
+    if not isinstance(payload, dict):
+        raise CLIError("JSON_PAYLOAD must be an object")
+    required = ("signature", "usage_example", "error_shape")
+    missing = [k for k in required if k not in payload]
+    if missing:
+        raise CLIError(f"JSON_PAYLOAD missing required fields: {missing}. Required: {required}")
+
+    state = read_json(plan_dir / "state.json")
+    if "interfaces_actual" not in state:
+        state["interfaces_actual"] = {}
+
+    key = f"{phase_num}:{contract_id}"
+    state["interfaces_actual"][key] = {
+        "phase": phase_num,
+        "contract_id": contract_id,
+        "signature": payload["signature"],
+        "usage_example": payload["usage_example"],
+        "error_shape": payload["error_shape"],
+        "timestamp": now_iso(),
+    }
+    _save_state(plan_dir, state)
+    print(json.dumps({"set": "interface_actual", "phase": phase_num, "contract_id": contract_id}))
+
+
+def cmd_state_get_interface_actual(plan_dir: Path, phase_num: int, contract_id: str):
+    """Return the realized interface for (phase, contract_id), or ``null`` if absent.
+
+    The consuming executor (or its orchestrator) calls this before integration
+    to get the producer's actual signature.
+    """
+    state = read_json(plan_dir / "state.json")
+    interfaces = state.get("interfaces_actual", {})
+    key = f"{phase_num}:{contract_id}"
+    entry = interfaces.get(key)
+    if entry is None:
+        print("null")
+    else:
+        print(json.dumps(entry, indent=2))
 
 
 def cmd_state_get_discoveries(plan_dir: Path):
@@ -1580,6 +1634,16 @@ def _route(args: list[str], plan_dir_override: str | None = None):
             cmd_state_add_decision(
                 plan_dir, int(args[2]), args[3],
                 args[4], args[5], args[6] if len(args) > 6 else ""
+            )
+        elif sub == "set-interface-actual" and len(args) >= 5:
+            # state set-interface-actual PHASE_N CONTRACT_ID JSON_PAYLOAD
+            cmd_state_set_interface_actual(
+                plan_dir, int(args[2]), args[3], args[4]
+            )
+        elif sub == "get-interface-actual" and len(args) >= 4:
+            # state get-interface-actual PHASE_N CONTRACT_ID
+            cmd_state_get_interface_actual(
+                plan_dir, int(args[2]), args[3]
             )
         elif sub == "get-discoveries":
             cmd_state_get_discoveries(plan_dir)

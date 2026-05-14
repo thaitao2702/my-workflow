@@ -52,7 +52,8 @@ def load_config(root: Path) -> dict:
         print("Create .workflow/config.json with jira.base_url, jira.auth_env_var, jira.email_env_var", file=sys.stderr)
         sys.exit(1)
 
-    with open(config_path, "r", encoding="utf-8") as f:
+    # encoding="utf-8-sig" tolerates a leading BOM (e.g., from editors or PowerShell Set-Content -Encoding utf8)
+    with open(config_path, "r", encoding="utf-8-sig") as f:
         config = json.load(f)
 
     jira = config.get("jira")
@@ -419,18 +420,42 @@ def main():
 
     ticket_key = resolve_ticket_key(args.ticket, config)
 
-    # Build auth header
-    email_var = config.get("email_env_var", "JIRA_EMAIL")
-    token_var = config.get("auth_env_var", "JIRA_TOKEN")
+    # Build auth header.
+    # `email_env_var` / `auth_env_var` may hold either an env-var NAME (looked up in os.environ)
+    # or a literal credential value. Heuristic: if the value matches the UPPER_SNAKE env-var-name
+    # shape AND that env var is set, use the env var; otherwise treat the value as a literal.
+    def _resolve_credential(field_value: str | None, fallback_env_name: str) -> str | None:
+        if field_value:
+            looks_like_env_name = bool(re.match(r"^[A-Z_][A-Z0-9_]*$", field_value))
+            if looks_like_env_name:
+                env_value = os.environ.get(field_value)
+                if env_value:
+                    return env_value
+                # falls through to literal branch — but UPPER_SNAKE strings are almost certainly
+                # env-var names, not credentials, so prefer the fallback env var below
+            else:
+                # Value contains characters invalid in env-var names (e.g. '@', '.', '=') — it's a literal
+                return field_value
+        return os.environ.get(fallback_env_name)
 
-    email = os.environ.get(email_var)
-    token = os.environ.get(token_var)
+    email_field = config.get("email_env_var")
+    token_field = config.get("auth_env_var")
+    email = _resolve_credential(email_field, "JIRA_EMAIL")
+    token = _resolve_credential(token_field, "JIRA_TOKEN")
 
     if not email:
-        print(f"Error: Environment variable {email_var} not set", file=sys.stderr)
+        print(
+            f"Error: Could not resolve Jira email. Set jira.email_env_var in config to either "
+            f"the literal email or the name of an env var (default fallback: JIRA_EMAIL).",
+            file=sys.stderr,
+        )
         sys.exit(1)
     if not token:
-        print(f"Error: Environment variable {token_var} not set", file=sys.stderr)
+        print(
+            f"Error: Could not resolve Jira API token. Set jira.auth_env_var in config to either "
+            f"the literal token or the name of an env var (default fallback: JIRA_TOKEN).",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     auth_header = base64.b64encode(f"{email}:{token}".encode()).decode()

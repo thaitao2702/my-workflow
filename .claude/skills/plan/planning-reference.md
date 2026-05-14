@@ -93,14 +93,25 @@ Each phase is implemented by an independent executor agent with no shared contex
 - Expected file path where the interface will be created
 - Which task defines it
 - Which phases consume it
-- **Interface specs:** For each public function, class, action, or component that consumers will use:
-  - `name` — function/class/action/component name
-  - `type` — what kind (Redux action, class, React component, utility function, etc.)
-  - `input` — parameters, props, or arguments
-  - `output` — return value, state mutation, side effect
-  - `behavior` — what happens when called, including conditional behavior, edge cases, and constraints that affect consumers
+- **`interface_plan[]` — what the planner writes:** semantic coordination data only, never exact type literals. For each public function, class, action, or component that consumers will use:
+  - `name` — symbol the consumer imports
+  - `type` — kind of artifact (hook, class, component, action, utility)
+  - `purpose` — one line: what capability this delivers
+  - `inputs_semantic` — WHAT semantic inputs the consumer supplies (English description, not type literals)
+  - `outputs_semantic` — WHAT the consumer can do with the result
+  - `consumer_invariants` — behaviors and edge cases the consumer can rely on
+- **`interface_actual[]` — what the producing executor writes later (at execute time, not plan time):**
+  - `signature` — realized TypeScript/language signature
+  - `usage_example` — minimal call snippet
+  - `error_shape` — failure encoding in practice
 
-The interface specs are the **contract** between producer and consumer. The producing executor implements to this spec. The consuming executor integrates based on it. If the consumer needs deeper understanding (internal state shape, edge cases not covered in the spec), the file path gives it a concrete location to read.
+Plan-time pre-pinning of exact types in `interface_plan[]` is permitted **only** when re-exporting an existing project type — cite the type's location with `file_path:line_number` as evidence. Otherwise, plan-time interfaces stay semantic.
+
+**Why the split.** Pre-pinning exact field names, optional flags, and nested type shapes at plan time is a planner guess on top of an implementation choice the producing executor is better positioned to make. The split lets the planner contribute coordination data (high value at plan time) without overreaching into implementation detail (low value at plan time, often wrong). The JSON shape itself enforces the boundary — there's no field for the planner to leak execute-time detail into.
+
+**Parallel-group coordination still works.** Both producer and consumer read the same `interface_plan[]` entry. The producer fills `interface_actual[]` before the consumer's executor reads it (sequential ordering inside a parallel group is enforced by the state-CLI write/read order — see `state set-interface-actual` / `state get-interface-actual`).
+
+The `interface_plan[]` is the planner's **contract** between producer and consumer. The producing executor implements to that contract (its realized signature lands in `interface_actual[]`). The consuming executor integrates based on both fields. If the consumer needs deeper understanding (internal state shape, edge cases not covered in the spec), the file path gives it a concrete location to read.
 
 **Where declarations live:** In the `interface_contracts` field of the phase that DEFINES the interface (the provider). The consuming phase's task description references the contract by phase number and contract ID.
 
@@ -108,11 +119,14 @@ The interface specs are the **contract** between producer and consumer. The prod
 
 Good:
   Phase 3 declares BridgeHelper in interface_contracts with name, file path,
-  consumed_by_phases: [2, 4], and interface specs listing each public method
-  with input/output/behavior. Phase 3 is in Group A, Phase 2 is in Group B.
-  Phase 2 task-02 says: "Receives BridgeHelper (Phase 3 contract-01) via
-  constructor injection." The executor reads the contract spec to know the
-  expected interface, and reads the file for implementation detail if needed.
+  consumed_by_phases: [2, 4], and interface_plan[] listing each public method
+  with purpose/inputs_semantic/outputs_semantic/consumer_invariants — no type
+  literals. interface_actual[] is []. Phase 3 is in Group A, Phase 2 is in
+  Group B. Phase 2 task-02 says: "Receives BridgeHelper (Phase 3 contract-01)
+  via constructor injection." After Phase 3 completes, the orchestrator calls
+  state set-interface-actual to record the realized signature. Phase 2's
+  executor receives both interface_plan[] (semantic contract) and the realized
+  interface_actual[] (actual signature) before starting.
 
 Bad:
   Phase 2 and Phase 3 are in the same parallel group. Phase 2 task-02 says:
@@ -121,10 +135,18 @@ Bad:
   Agents invent independently.
 
 Also bad:
-  Phase 3 declares a contract with only name and description — no interface
-  specs. Phase 2's executor receives the contract reference but has no idea
-  what methods exist, what they accept, or how they behave. It guesses or
-  reads source hoping to find something recognizable.
+  Phase 3 declares a contract with only name and description — no interface_plan[].
+  Phase 2's executor receives the contract reference but has no idea what methods
+  exist, what they accept, or what invariants they offer. It guesses or reads
+  source hoping to find something recognizable.
+
+Also bad:
+  Phase 3's interface_plan[] pre-pins exact TypeScript type literals at plan time
+  ("input: { gameId: number; currencyId: number; ... }") for a new endpoint whose
+  implementation hasn't been written yet. The producing executor discovers a
+  better encoding during implementation but is now constrained by the planner's
+  guess. The planner should have written semantic descriptions in
+  interface_plan[] and left interface_actual[] empty for the executor to fill.
 
 ---
 
@@ -217,6 +239,10 @@ Before writing each criterion or test requirement, check these five questions. R
 
 ### Task Descriptions
 
+**The executor-source test (run on every task description).** Read your task description as if you are the executor about to implement it. Ask: "Will I need to read source code to figure out HOW to do this?" If the answer is no, you over-specified — rewrite to describe the observable outcome (WHAT exists after this task runs that didn't before) and let the executor decide HOW by reading source.
+
+The plan describes WHAT must exist when the task is done. Source code describes HOW to make it exist. The executor reads source; the plan should not duplicate source.
+
 PROHIBITED in `tasks[].description`:
 - Private implementation details (polling intervals, internal method bodies, algorithm choices, internal data structure layouts)
 - Property paths (`config.auth.tokenExpiry`, `req.body.email`)
@@ -225,13 +251,26 @@ PROHIBITED in `tasks[].description`:
 - Code snippets, pseudocode, or implementation algorithms
 - Line numbers or file byte offsets
 - Inline signature definitions for cross-phase interfaces (use contract references instead)
+- **URL paths, HTTP methods, status codes** (executor reads the existing API patterns)
+- **Body / payload schemas** — field names, types, optional flags (executor matches the existing convention; cross-phase contracts use `interface_plan[]`, not inline schemas)
+- **Exact symbol names from the existing codebase beyond what the task NAME already references** (no "uses `useStepSubmission`", "wraps in `forwardRef`", "via `React.lazy()`") — the executor reads source to discover the right symbol
+- **Transform / serialization logic** (`mapKeys`, `pick`, custom reducer code) — these are execute-time choices
 
 PERMITTED — cross-phase contract references:
 - "Receives BridgeHelper (Phase 3 contract-01) via constructor injection"
 - "Calls the analysis service (Phase 2 contract-02) to process results"
 These reference declared `interface_contracts[]` entries, not implementation details.
 
-REQUIRED: behavioral requirements, constraints, boundaries, purpose, contract references for cross-phase dependencies.
+REQUIRED: observable outcome (WHAT exists when done), behavioral requirements, constraints, boundaries, purpose, contract references for cross-phase dependencies.
+
+**Worked example.** Compare:
+
+- BAD (HOW): "Inject `builder.query` at URL `agentgamecurrency/list-by-game`, body `{gameId, currencyIds, page, pageSize, search?}`, no tags, `keepUnusedDataFor: 0`. Add `transformResponse` that maps each row's `currencyDtos[i]` from `{currencyId, currencyCode}` to `{id, code}`. Export `useGetAgentsByCurrenciesQuery` hook."
+- GOOD (WHAT): "AgentApi exposes a query that returns paginated agents filtered by the form's currently-selected currencies, in the shape the existing currency-list component consumes."
+
+The BAD version pins the URL, body schema, RTK Query config flags, transform logic, and hook name — five decisions the executor would make better by reading existing API patterns. If the URL convention changes in the meantime, or if the existing transformResponse helper has a project-standard form, the plan is now wrong and the executor either follows the wrong plan or wastes time reconciling. The GOOD version states the outcome and lets the executor align with the codebase.
+
+The plan-reviewer (Step 8) and the feasibility-validator (Step 5d) both expect this discipline — over-specified descriptions are flagged as implementation prescription, not planning content.
 
 ### Acceptance Specs (additional rules)
 

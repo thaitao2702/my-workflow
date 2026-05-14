@@ -72,6 +72,7 @@ Every prompt template has three sections:
 | executor | `.claude/skills/execute/executor-prompt.md` |
 | reviewer (code) | `.claude/skills/execute/reviewer-prompt.md` |
 | plan-reviewer | `.claude/skills/plan/plan-reviewer-prompt.md` |
+| feasibility-validator | `.claude/skills/plan/feasibility-prompt.md` |
 | analyzer | `.claude/skills/analyze/analyzer-prompt.md` |
 | doc-updater | `.claude/skills/doc-update/doc-updater-prompt.md` |
 | template-extractor | `.claude/skills/template-create/template-extractor-prompt.md` |

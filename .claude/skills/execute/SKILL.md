@@ -115,20 +115,53 @@ Process groups sequentially (A → B → C). Within each group, phases can run i
 
 Read the prompt template: `.claude/skills/execute/executor-prompt.md`
 
-1. Collect each data item listed in **For Orchestrator** from its specified source
-2. Fill `{placeholders}` in **For Subagent** with collected data, keep purpose descriptions
-3. Spawn **one** executor subagent (`.claude/agents/executor.md`) for the entire phase, passing the filled **For Subagent** section as the prompt. The executor implements all tasks sequentially, tracking completion via CLI as it goes.
+The flow is **load → spawn → parse-and-persist**:
+
+1. Collect each data item listed in **For Orchestrator** from its specified source.
+
+2. **Load realized interfaces from state (consumer-side, conditional).** If the current phase's task descriptions reference any cross-phase contracts (i.e., this phase consumes `interface_contracts[]` declared by earlier phases), assemble the `{received_interfaces}` placeholder BEFORE filling the rest of the placeholders:
+
+   For each `interface_contracts[]` entry on the current phase's producing-phase dependencies (identified by `consumed_by_phases` including the current phase number):
+
+   a. Read the producing phase's planned specs from `phase-{producing_phase_num}.json` → `interface_contracts[].interface_plan[]`. These provide behavioral context (`purpose`, `inputs_semantic`, `outputs_semantic`, `consumer_invariants`) that a signature alone doesn't convey.
+   b. Load the realized signature from state via CLI:
+
+      ```
+      state get-interface-actual {producing_phase_num} {contract_id} --plan-dir $PLAN_DIR
+      ```
+
+      This returns the JSON payload (`signature`, `usage_example`, `error_shape`) the producing executor persisted in its own Step 2b parse phase, or literal `null` if not yet written. Reading from state (not from in-memory cache) makes the consumer-side resilient to orchestrator crashes between phases.
+   c. Assemble BOTH halves into one block per contract:
+      - Contract ID + class name (with source phase)
+      - File path (so the consuming executor can read the source for deeper detail)
+      - Planned interface specs (from `interface_plan[]`): name, type, purpose, inputs_semantic, outputs_semantic, consumer_invariants
+      - Realized signatures (from `state get-interface-actual`): signature, usage_example, error_shape
+   d. Concatenate the per-contract blocks into the `{received_interfaces}` placeholder string in deterministic markdown.
+
+   **Fallback when state returns `null`:** If `state get-interface-actual` returns `null` for a referenced contract (orchestrator crashed before persistence, producer didn't report it, or producer hasn't run yet): include the `interface_plan[]` portion only, plus the `file` path so the consuming executor can read the source directly. Log a warning: `state log "Phase {N} contract {ID} — using planned specs, actual signatures not captured" --plan-dir $PLAN_DIR`.
+
+   If the current phase has no cross-phase contracts to consume: set `{received_interfaces}` to the literal string `None`.
+
+3. Fill the remaining `{placeholders}` in **For Subagent** with the collected data, keep purpose descriptions.
+
+4. Spawn **one** executor subagent (`.claude/agents/executor.md`) for the entire phase, passing the filled **For Subagent** section as the prompt. The executor implements all tasks sequentially, tracking completion via CLI as it goes.
 
 **Parse executor output** per `executor-prompt.md` § "For Orchestrator — Expected Output":
 - Read `## Status` → `**Result**`: if `FAILURE` or `PARTIAL`, check `## Escalations` for blockers before proceeding
 - **Persist discoveries:** For each row in `## Discoveries`, call `state add-discovery {phase_num} {component} "{what}" "{why}" "{risk}" "{test_suggestion}" {category} --plan-dir $PLAN_DIR`
 - **Persist decisions:** For each row in `## Decisions`, call `state add-decision {phase_num} {component} "{decision}" "{reasoning}" "{alternatives}" --plan-dir $PLAN_DIR`
 - Read `## Result` → `**Files Changed**` for the reviewer, `**Tests Written/Passing**` for verification
-- **Capture public interfaces (conditional):** If the phase JSON has non-empty `interface_contracts`:
+- **Capture and persist public interfaces (producer-side, conditional):** If the phase JSON has non-empty `interface_contracts`:
   1. Parse the executor's `## Public Interfaces` section
-  2. For each contract reported: match the contract ID to the phase's `interface_contracts[].id` and store the full interface block (contract ID, class name, file path, signature)
-  3. These stored interfaces are forwarded to consuming phases — see "Interface forwarding" below
-  - If the executor's output is missing `## Public Interfaces` but the phase has `interface_contracts`: escalate to user — "Phase {N} was expected to report public interfaces for {contract IDs} but did not. The consuming phases need these interfaces. Re-run the phase or provide the interfaces manually?"
+  2. For each contract reported: match the contract ID to the phase's `interface_contracts[].id` and extract `signature`, `usage_example`, `error_shape`
+  3. For each captured interface block, call:
+
+     ```
+     state set-interface-actual {phase_num} {contract_id} '{"signature":"...","usage_example":"...","error_shape":"..."}' --plan-dir $PLAN_DIR
+     ```
+
+     This persists the realized signature to state.json's `interfaces_actual` map. It survives session crashes and gives downstream consuming phases (which will run sub-step 2 above for their own Step 2b) a stable read path. Without persistence, an orchestrator crash between Phase N and Phase N+1 would lose the realized interface (captured only in orchestrator memory).
+  4. If the executor's output is missing `## Public Interfaces` but the phase has `interface_contracts`: escalate to user — "Phase {N} was expected to report public interfaces for {contract IDs} but did not. The consuming phases need these interfaces. Re-run the phase or provide the interfaces manually?"
 
 The executor handles task-level state tracking internally:
 - Marks each task active before starting it
@@ -137,20 +170,18 @@ The executor handles task-level state tracking internally:
 
 **Why per-phase, not per-task:** Each subagent spawn costs ~4000 tokens of context. A 4-task phase costs 16,000 tokens with per-task spawning vs 4,000 tokens per-phase. The executor also builds naturally on its own work — no re-reading files it just created.
 
-**Interface forwarding:**
+**End-to-end interface flow across phases:**
 
-When spawning an executor for a phase that consumes cross-phase interfaces (its task descriptions reference contracts from other phases):
+```
+Phase 1 (producer):  spawn executor → returns ## Public Interfaces
+                     → state set-interface-actual writes interface_actual to state.json
 
-1. Collect all interface blocks captured from the producing phases
-2. For each contract, also read the planned interface specs from the producing phase's `interface_contracts[].interfaces[]` in its phase JSON — these provide behavioral context (input, output, behavior) that signatures alone don't convey
-3. Assemble them into the `{received_interfaces}` placeholder. For each contract include:
-   - Contract ID + class name (with source phase)
-   - File path (so the consuming executor can read the source for deeper detail)
-   - Planned interface specs: input, output, behavior for each public function/class/action
-   - Actual signatures captured from the producing executor's `## Public Interfaces` output
-4. Pass as `{received_interfaces}` in the executor prompt
+Phase 2 (consumer):  state get-interface-actual reads interface_actual from state.json
+                     → assembles {received_interfaces} with plan + actual halves
+                     → spawn executor with that placeholder filled
+```
 
-If a referenced contract was not captured (producing phase failed or didn't report it): fall back to the planned interface specs from the phase JSON and include the file path. The consuming executor can read the file directly. Log a warning: "Phase {N} contract {ID} — using planned specs, actual signatures not captured."
+This pattern is symmetric: every phase that defines contracts WRITES at parse time; every phase that consumes contracts READS at placeholder-fill time. Both sides are CLI-mediated through state.json, so a session crash between phases never loses the interface.
 
 #### Step 2b.1: Test Execution Gate (conditional)
 

@@ -127,7 +127,25 @@ Only record corrections where existing documentation (analysis docs, project-ove
 
 If no corrections: write "None" under the table header.
 
-If every row of the Self-Check Findings table is "None identified" — requirements are clear and complete — skip directly to Phase B.
+7. **Initialize plan directory.** After clarifications and corrections are complete (or skipped if no gaps existed):
+
+   - Derive a kebab-case `{slug}` from the consolidated requirement (e.g., "Add CSV export to orders API" → `add-csv-export-orders-api`)
+   - Compute `$PLAN_DIR = .workflow/plans/{YYMMDD}-{slug}/` where `{YYMMDD}` is today's date
+   - Create the directory if it doesn't exist (no files inside yet)
+
+   Each subsequent Phase C step writes ONE artifact file into `$PLAN_DIR`:
+
+   | Step | File written |
+   |------|--------------|
+   | 5a | `capabilities.md` — numbered capability list |
+   | 5b | `decisions.md` — per-capability analysis blocks |
+   | 5c.1 | `phase-grouping.md` — bulleted phase list with execution groups |
+   | 5c.2 | `task-drafts.md` — per-phase task tables |
+   | 5c.3 | `audit.md` — Phase Composition Audit table |
+
+   Per-file artifacts let later steps update earlier ones deterministically: a small focused file can be fully rewritten (Write tool) when substantial changes are needed, or surgically Edited when small changes apply. `$PLAN_DIR` is reused throughout — Step 7 writes `plan.json` and `phase-{N}.json` alongside these files.
+
+If every row of the Self-Check Findings table is "None identified" — requirements are clear and complete — skip steps 3-6 above (no clarification needed); still complete step 7 above before proceeding to Phase B.
 
 ## Phase B: Component Intelligence Gathering
 
@@ -201,11 +219,13 @@ Only non-obvious findings — not "the function exists" but "the analysis doc sa
 
 **Do NOT invoke `/analyze` during planning.** If an analysis doc is stale or missing, read source directly. Analysis generation is expensive (subagent overhead) and best deferred to the execution analysis gate (Step 2a in `/execute`).
 
+**Re-anchor (before Phase C):** Before crossing into Phase C and starting Step 5, do both reads below — they place phase instructions and principles adjacent to your generation point, where attention is strongest.
+1. Use the Read tool to load the Phase C section of `D:\Project\my-workflow\.claude\skills\plan\SKILL.md` from "## Phase C: Plan Creation" through the end of Step 7, load the instruction, not just the heading.
+2. Read `.claude/skills/plan/planning-reference.md` — it contains the planning principles, decision classification guide, and generation constraints that govern Steps 5-7. Apply them throughout Phase C.
+
 ## Phase C: Plan Creation (Main Agent)
 
 You design the plan directly — no subagent delegation. All context from Phases A-B is already in your session.
-
-**Read `.claude/skills/plan/planning-reference.md` now.** It contains the planning principles, decision classification guide, and generation constraints that govern Steps 5-7. Apply them throughout Phase C.
 
 ### Step 5: Problem Decomposition & Approach Design
 
@@ -223,14 +243,17 @@ Rules:
 
 **Complexity gate:** If there is only 1-2 capabilities with obvious approaches (no significant architectural decisions), collapse Steps 5b-5c into a brief note: "Approach: [description], follows existing [convention/pattern]" — then skip directly to Step 5d.
 
-**Now output a numbered list of capabilities, one per line with a brief description, in this format:**
+**Now write `$PLAN_DIR/capabilities.md`** using the Write tool. File content:
 
 ```
-### Capabilities
+# Capabilities
+
 1. [Capability name] — [what it does, one line]
 2. [Capability name] — [what it does, one line]
 3. ...
 ```
+
+After the Write completes, briefly state in the conversation: "Wrote {N} capabilities to capabilities.md."
 
 #### Step 5b: Per-Capability Analysis & Approach Selection
 
@@ -243,7 +266,21 @@ Rules:
 - **Max 3 approaches** per significant decision. If you see more, you're decomposing at the wrong level.
 - Later capabilities can reference earlier committed decisions: "Given Cap 1's selection of [X], this constrains the approach to..."
 
-**Now output the per-capability analysis block in this format (one block per capability):**
+**Now write `$PLAN_DIR/decisions.md`** using the Write tool. Process capabilities one at a time — derive each block, then write the file once with all blocks (the file is small enough that a single Write is simpler than multiple Edits).
+
+File structure:
+
+```
+# Per-Capability Analysis & Approach Selection
+
+### Capability 1: [Name]
+{block — see format below}
+
+### Capability 2: [Name]
+{block — see format below}
+```
+
+Block format (per capability):
 
 ```
 ### Capability N: [Name]
@@ -268,13 +305,68 @@ Rules:
 **Committed approach:** [1-line summary of how this capability will be built]
 ```
 
+After the Write completes, briefly state in the conversation: "Wrote analysis for {N} capabilities to decisions.md."
+
 #### Step 5c: Phase Composition
 
-All capabilities have committed approaches. Compose them into phases, then audit the composition in a single table.
+All capabilities have committed approaches. Compose them into phases, draft the tasks within each phase, then audit the composition. Each sub-step's output feeds the next.
 
 1. **Group capabilities into phases** — by cohesion, dependency order, and parallel safety. A single capability may span multiple phases if it has natural sequential stages. Assign each phase to an execution group (A, B, C…). Phases in the same group run in parallel and MUST NOT modify the same files.
 
-2. **Audit the composition.** Identifying integration tasks happens here — Transition rows reveal what wiring tasks must exist.
+   **Now write `$PLAN_DIR/phase-grouping.md`** using the Write tool. File content:
+
+   ```
+   # Phase Grouping
+
+   - **Phase 1: [Name]** (Execution Group A) — Capabilities: [1, 3]
+   - **Phase 2: [Name]** (Execution Group B) — Capabilities: [2]
+   - ...
+   ```
+
+   After the Write, briefly state in the conversation: "Wrote {N} phases (groups: A=..., B=..., ...) to phase-grouping.md."
+
+2. **Draft the task list per phase.** Without committed tasks, the audit below would reference tasks that exist only in your mind — non-deterministic and unverifiable. Commit task identity, files, and the **outcome** here so the audit cites real entries; Step 7 enriches each task with acceptance_criteria and test_requirements.
+
+   **Key principle: task drafts capture WHAT each task delivers, never HOW.** The `Done when` cell describes an observable outcome that did not exist before the task ran. The executor decides HOW by reading source — that is execute-time territory.
+
+   Rules for the task drafts:
+   - Each task is a coherent unit of work (one logical change, one commit's worth — see "Task Granularity" in `planning-reference.md`)
+   - Task IDs are `task-01`, `task-02`, ... within each phase (numbering resets per phase)
+   - Task name is short and action-oriented (e.g., "Create CSV serializer module")
+   - Files list is concrete — paths discovered in Step 4b reads. If a path doesn't yet exist, mark it `[new]` after the path.
+   - **`Done when` is ONE sentence describing the outcome** — a function/file/UI element/behavior that exists after this task that did not exist before. State the user-visible or system-visible result. Do NOT describe the steps to get there.
+   - **The executor-source test:** Read your `Done when` cell as if you are the executor. Ask "Will I need to read source code to figure out HOW?" If the answer is no, you over-specified — rewrite to describe an outcome, not a recipe.
+
+   GOOD vs BAD `Done when` examples:
+
+   | Task name | BAD (implementation, HOW) | GOOD (outcome, WHAT) |
+   |-----------|---------------------------|---------------------|
+   | Add agent-listing query endpoint | "Inject builder.query at URL `agentgamecurrency/list-by-game`, body `{gameId, currencyIds, page, pageSize, search?}`, no tags, keepUnusedDataFor: 0, add transformResponse mapping `{currencyId, currencyCode}` to `{id, code}`, export `useGetAgentsByCurrenciesQuery`." | "AgentApi exports a hook that returns paginated agents filtered by the currencies the form has selected, in the shape the existing currency-list component consumes." |
+   | Wire Agent Assignment tab into GameUpdate | "Insert items[] entry at index 3 using `loadable(() => import('./components/FormAgentAssignment'))`; pass `form`, `gameId={Number(id)}`, `onInitedFormFieldDone`, and a `ref`." | "GameUpdate renders an Agent Assignment tab between Paytable and Review&Submit; the form receives the same refs and props as the existing tabs." |
+
+   **Now write `$PLAN_DIR/task-drafts.md`** using the Write tool. File content — one `### Phase N: [Name]` block per phase, each containing a task-draft table:
+
+   ```
+   # Task Drafts
+
+   ### Phase 1: [Phase Name] (Execution Group [A])
+
+   | Task ID | Name | Capability | Files | Done when (outcome, WHAT not HOW) |
+   |---------|------|-----------|-------|-----------------------------------|
+   | task-01 | [name] | [Cap N] | `path/one.ts`, `path/two.ts [new]` | [observable outcome in one sentence] |
+   | task-02 | ... | ... | ... | ... |
+
+   ### Phase 2: [Phase Name] (Execution Group [B])
+
+   | Task ID | Name | Capability | Files | Done when (outcome, WHAT not HOW) |
+   ...
+   ```
+
+   After the Write, briefly state in the conversation: "Wrote task drafts for {N} phases ({M} tasks total) to task-drafts.md."
+
+   When Step 5c.3 audit triggers remediation (new wiring task, etc.), this file is the target of those Edits — section headers (`### Phase N: [Name] (Execution Group [X])`) are stable anchors within the file.
+
+3. **Audit the composition.** With phase boundaries committed in 5c.1 and tasks committed in 5c.2, surface cross-phase concerns. Identifying integration tasks happens here — Transition rows reveal what wiring tasks must exist (which then go into the 5c.2 tables).
 
    Concern Type definitions:
    - **Transition** — a runtime control or data flow between phases. Every user-action → system-response path must be fully covered by Transition rows. A missing Transition = a gap in the plan.
@@ -282,27 +374,97 @@ All capabilities have committed approaches. Compose them into phases, then audit
    - **Group Ordering** — verifies the producer's execution group is strictly earlier than the consumer's, with no circular dependencies.
 
    Rules for filling this table:
+   - **References must be real:** all task and phase references in the Producer/Consumer columns MUST match real entries in `$PLAN_DIR/task-drafts.md`. If you need a task that doesn't exist there, Edit `task-drafts.md` to add it FIRST, then come back here.
    - **Transition coverage:** every cross-phase relationship in the runtime flow gets a row. Trace end-to-end from user action to system response — if no Transition row covers a step in that flow, the plan has a gap.
    - **External Consumer coverage:** every plan task that modifies an existing interface gets a row. Grep for consumers of the **specific** interface being changed — not the entire component. "Backward compatible" requires a concrete reason (e.g., "new optional parameter", "additive enum value"), not just an assertion.
    - **Group Ordering coverage:** every cross-phase code dependency (Phase X imports, calls, or receives objects created by Phase Y) gets a Group Ordering row. Assign a provisional `interface_contracts` ID (`contract-01`, `contract-02`, …) scoped to the defining phase — Step 7 materializes these as JSON entries using the IDs assigned here. Every Transition row whose producer and consumer phases differ also gets a corresponding Group Ordering row.
-   - **Resolution required:** no row may be left empty. For "GAP", "NEW TASK", "MOVE", or "CIRCULAR" entries, apply the stated action to the phase structure, then re-run the affected rows on the revised structure. Do not proceed to Step 5d until every row reads OK, a wiring task-id, or a concrete backward-compatibility justification.
 
-   **Now output the audit table:**
+   **Remediation rule.** For every audit row whose concern requires a plan change, take the change against the relevant artifact file BEFORE moving to the next row:
+
+   - **Transition GAP** → Edit `$PLAN_DIR/task-drafts.md` to add a new task row to the appropriate phase's table (anchor on the `### Phase N: ...` header).
+   - **External Consumer requiring update** → Edit `$PLAN_DIR/task-drafts.md` to add a task row to whichever phase owns the consumer surface.
+   - **Group Ordering violation (MOVE)** → Edit `$PLAN_DIR/phase-grouping.md` to relocate the phase to a later group, AND edit the corresponding `### Phase N: ...` header in `$PLAN_DIR/task-drafts.md` to update its "(Execution Group X)" label.
+   - **Circular dependency** → Edit `$PLAN_DIR/phase-grouping.md` and `$PLAN_DIR/task-drafts.md` to either merge phases (combine the affected `### Phase N: ...` blocks) or extract the shared interface into a new earlier phase. For substantial restructures, prefer fully rewriting the affected file with the Write tool over surgical Edits.
+   - **Approach revision** → Edit `$PLAN_DIR/decisions.md` to update the affected capability's `Committed approach` line.
+
+   After applying the Edit, fill the audit row's `Notes` column with a sentence describing the change ("Added task-04 to Phase 2 — wires CSV serializer to streaming response"). Set `Status` to `OK`. Re-run any audit row affected by the Edit (e.g., adding a new task may resolve another Transition row that depended on it).
+
+   **Escalation when stuck.** If an audit row's required change cannot be applied in one revision pass — typically because the change would violate a user-clarification constraint or would require structural redesign beyond simple task additions — do NOT loop indefinitely. Set `Status` to `ESCALATED` and present the row to the user with 3 options:
+
+   > "Audit row #N could not be resolved:
+   > - **Concern:** [Subject]
+   > - **Proposed change:** [what you tried]
+   > - **Blocker:** [why it can't be applied autonomously]
+   >
+   > Please choose:
+   > 1. Apply suggested change manually — describe edit details for my confirmation
+   > 2. Modify the change — specify a different approach
+   > 3. Accept the gap as risk — provide rationale; I'll record it in Notes and set Status to OK"
+
+   Apply the user's choice (perform the Edit on the relevant artifact file, or record the ACCEPTED RISK rationale in the Notes column of `audit.md`), then continue with remaining audit rows. Do not proceed to Step 5d until every audit row has `Status = OK`.
+
+   **Now write `$PLAN_DIR/audit.md`** using the Write tool. File content begins with `# Phase Composition Audit` followed by the table below. As remediations are applied to other artifact files, update this file's `Status` and `Notes` columns by editing in place (use the Edit tool against the specific row).
 
    **Phase Composition Audit:**
-   | # | Concern Type | Subject | Producer / Source | Consumer / Target | Resolution / Status |
-   |---|--------------|---------|-------------------|-------------------|---------------------|
-   | 1 | Transition | [data or control flow, e.g., "HTTP request body → handler"] | [Phase X / task-N] | [Phase Y / task-M] | [task-id of the wiring task, OR "GAP — add task in Phase Z"] |
-   | 2 | External Consumer | [modified interface + specific change, e.g., "UserService.findById return type now Promise<User \| null>"] | [plan task-N that modifies] | [external file paths from grep, OR "None — no external consumers"] | [one of: "Backward compatible — [concrete reason]" / "Already covered by task-NN" / "NEW TASK: update [files] in Phase X"] |
-   | 3 | Group Ordering | [interface_contracts ID, OR a Transition row's # from above] | [Phase X / Group A] | [Phase Y / Group B] | [OK, OR "MOVE: Phase Y to Group [later]", OR "CIRCULAR: [merge phases / extract shared interface into earlier phase]"] |
+   | # | Concern Type | Subject | Producer / Source | Consumer / Target | Status | Notes |
+   |---|--------------|---------|-------------------|-------------------|--------|-------|
+   | 1 | Transition | [data or control flow, e.g., "HTTP request body → handler"] | [Phase X / task-N from 5c.2] | [Phase Y / task-M from 5c.2] | OK ∣ ESCALATED | [resolution description, e.g., "Covered by task-04 in Phase 2" or "Added task-05 to Phase 2 — wires producer to consumer"] |
+   | 2 | External Consumer | [modified interface + specific change, e.g., "UserService.findById return type now Promise<User \| null>"] | [plan task-N that modifies] | [external file paths from grep, OR "None — no external consumers"] | OK ∣ ESCALATED | [resolution, e.g., "Backward compatible — new optional parameter, existing callers unaffected" or "Added task-08 to Phase 3 updating src/admin/dashboard.ts"] |
+   | 3 | Group Ordering | [interface_contracts ID, OR a Transition row's # from above] | [Phase X / Group A] | [Phase Y / Group B] | OK ∣ ESCALATED | [resolution, e.g., "Direction correct — Phase X (Group A) precedes Phase Y (Group B)" or "Moved Phase Y to Group C" or "Resolved circular by merging Phase X into Phase Y"] |
 
-#### Step 5d: Direction Summary
+#### Step 5d: Feasibility Walkthrough (subagent-driven)
 
-Synthesize the decomposition into a **direction summary** for user validation:
+Before presenting to the user, validate the plan by simulating its completion. Step 5c's Phase Composition (phase grouping, task drafts, audit) committed WHAT the plan is; this step verifies WHETHER it would actually work.
+
+**Why a subagent.** A separate-context subagent reduces author bias — you designed the plan, so your judgment of "would this work?" inherits your blind spots. The subagent reads the plan fresh and produces evidence-cited findings. You apply revisions; the subagent never edits plan files.
+
+This catches the class of defects the structural plan-reviewer (Step 8) cannot — feasibility failures, missing capabilities at integration points, and assumptions that won't hold under real implementation.
+
+**Sub-step 5d.1 — Verify all Phase C artifact files exist.**
+
+`$PLAN_DIR` already exists from Step 3.7 (Phase A end). Confirm before invoking the subagent that all five artifact files exist and are non-empty:
+
+- `$PLAN_DIR/capabilities.md` (Step 5a)
+- `$PLAN_DIR/decisions.md` (Step 5b)
+- `$PLAN_DIR/phase-grouping.md` (Step 5c.1)
+- `$PLAN_DIR/task-drafts.md` (Step 5c.2)
+- `$PLAN_DIR/audit.md` (Step 5c.3) — every row's `Status` must be `OK` (escalations resolved with user input)
+
+If a file is missing, or the audit has any non-OK row, return to the corresponding step and complete it before proceeding.
+
+**Sub-step 5d.2 — Spawn the feasibility-validator subagent.**
+
+Read the prompt template: `.claude/skills/plan/feasibility-prompt.md`.
+
+1. Collect each data item listed in **For Orchestrator — Data to Collect** from its specified source
+2. Fill `{placeholders}` in **For Subagent** with collected values (paths as raw strings; the `requirements_in_scope` and `user_clarification` blocks as inline bulleted text — capture every nuance from Phase A that affects feasibility)
+3. Spawn the **feasibility-validator subagent** (`.claude/agents/feasibility-validator.md`) **in foreground**, passing the filled **For Subagent** section as the prompt. Foreground gives progress visibility and avoids redundant launches if the agent appears stalled.
+
+**Sub-step 5d.3 — Parse response and apply revisions.**
+
+Per the template's "For Orchestrator — Expected Output" section:
+
+- **On `PASS`:** store the trace + premortem for Step 6 presentation; proceed to Step 6.
+- **On `FAIL_REVISION_NEEDED`:**
+  - For each trace row with Verdict ≠ DEMONSTRABLY_SATISFIED: Edit the relevant artifact file — typically `$PLAN_DIR/task-drafts.md` (add task, change description, change files) or `$PLAN_DIR/audit.md` (add audit row + corresponding remediation in another file).
+  - For each premortem Mitigation that's a plan change: apply it by Editing the appropriate file (`task-drafts.md`, `decisions.md`, `phase-grouping.md`, etc.).
+  - Re-spawn the subagent (**max 2 revision rounds total**).
+  - If still `FAIL_REVISION_NEEDED` after 2 rounds: present the findings to the user and ask how to proceed (`approve as-is with accepted risks` / `apply specific revisions and re-run` / `escalate to deeper rework`).
+- **On `FAIL_AMBIGUOUS`:** present the Escalations table to the user immediately. Wait for clarification. Update your in-conversation `user_clarification` block with the new answers (no artifact file change unless a Phase C section is affected), and re-spawn the subagent.
+
+**Sub-step 5d.4 — Hold the final trace + premortem.**
+
+The trace + premortem from the final passing (or final-attempt) subagent response is the artifact you present to the user in Step 6 alongside the direction summary. Do NOT regenerate it yourself — Step 6 shows the subagent's output verbatim.
+
+### Step 6: Direction Summary & User Checkpoint
+
+The user understands the requirements better than any agent — catching directional mistakes here is cheap; running a 13-dimension review on a plan the user would reject is waste. This step synthesizes the direction summary AND presents it (with Step 5d's Feasibility Walkthrough) to the user in one operation.
+
+**Sub-step 6.1 — Synthesize the direction summary.** Read the Phase C artifact files in parallel (`$PLAN_DIR/capabilities.md`, `decisions.md`, `phase-grouping.md`, `task-drafts.md`, `audit.md`) for source data. Compose the following for user review (do NOT produce full JSON yet):
 
 - Plan name and scope
-- Number of phases and total tasks
-- Phase overview with dependency groups and key dependencies
+- Number of phases (from `phase-grouping.md`) and total tasks (count rows across `task-drafts.md`)
+- Phase overview with dependency groups and key dependencies (from `phase-grouping.md`)
 - **Main flow diagram** — show how the pieces connect at runtime (not build order). Use a simple text flow with arrows showing data/control flow through the system once all phases are assembled. Label each step with the phase that produces it. This makes composition gaps visible — if no phase covers a transition, the gap is obvious.
 
   Example:
@@ -315,51 +477,69 @@ Synthesize the decomposition into a **direction summary** for user validation:
   | Decision | Options Considered | Selected | Rationale |
   |----------|-------------------|----------|-----------|
   ```
-- Top risks
+- Top risks (informed by Step 5d's Premortem mitigations)
 
-Do NOT produce full JSON at this point — just the direction for user validation.
+**Sub-step 6.2 — Present to the user.**
 
-### Step 6: User Direction Checkpoint
-
-The user understands the requirements better than any agent — catching directional mistakes here is cheap; running a 12-dimension review on a plan the user would reject is waste.
-
-1. Present the direction summary to the user
+1. Show the direction summary from 6.1 AND the Step 5d feasibility-validator subagent's output verbatim (Requirement Satisfaction Trace + Premortem + any Escalations rows)
 2. Ask: "Does this direction look right? Approve to proceed, or tell me what to change."
 3. If user wants changes:
    - If the user disagrees with a key decision from the table, re-enter Step 5b for that specific capability only — don't redo the entire analysis
-   - For structural changes (add/remove phases, change grouping), revise Step 5c-5d
-   - Present the updated direction summary and ask again
+   - For structural changes (add/remove phases, change grouping, change tasks), revise Step 5c (regroup phases in 5c.1, revise task drafts in 5c.2, re-run audit 5c.3)
+   - If the user wants to address a premortem risk differently or rejects an "ACCEPTED RISK" rationale, Edit the relevant artifact file (`$PLAN_DIR/task-drafts.md`, `$PLAN_DIR/decisions.md`, etc.) and re-spawn the feasibility-validator subagent (return to Step 5d.2-5d.3) for the affected rows
+   - Re-synthesize the direction summary in 6.1 with the updates, then re-present
    - Repeat until user approves direction
-4. If user approves: proceed to Step 7
+4. If user approves: proceed to Step 6.5
+
+### Step 6.5: TDD Strategy Callout (mandatory before Step 7)
+
+Output an explicit TDD Strategy block in the planning transcript before writing any `test_requirements` field. This eliminates speculative "if a test runner is added later" phrasing at its source.
+
+Process:
+1. Check `package.json.scripts.test` (or the project's equivalent) and `.workflow/project-overview.md` § Testing
+2. Output the block below; every field MUST be filled
+
+```
+**TDD Strategy:**
+- **Test runner detected:** {exact name like "Vitest" / "Jest" / "Pytest"; or "None — confirmed by absence of test script in package.json AND no test framework dependencies"}
+- **Policy applied:** {"TDD default — tests first" if runner present; "TDD exception per project policy" if absent, citing the path to the TDD policy doc (e.g., `.claude/rules/tdd-policy.md`)}
+- **Test requirement template:** {the verbatim phrasing that will appear in `test_requirements` arrays for tasks where the exception applies — e.g., "No test runner in this project; manual verification scenario: [...]". NEVER `"if a test runner is added later"` or similar future-conditional speculation.}
+```
+
+The template phrasing becomes the canonical wording for every applicable task's `test_requirements` entry in Step 7. If the runner IS present, the template field reads "Standard TDD — write test first, then implementation" and Step 7's task entries use that pattern instead.
 
 ### Step 7: Write Plan Files
 
 Direction approved — now materialize the full plan to disk.
 
+**Read the Phase C artifact files first** — they are the source of truth for everything Phase C produced. Read in parallel: `$PLAN_DIR/capabilities.md`, `$PLAN_DIR/decisions.md`, `$PLAN_DIR/phase-grouping.md`, `$PLAN_DIR/task-drafts.md`, `$PLAN_DIR/audit.md`. Phase A/B clarifications and component intelligence come from conversation (they live there by design — not persisted as files).
+
 **Read `.claude/skills/plan/plan-phase-formats.md` now.** It contains the `plan.json` and `phase-{N}.json` format specifications with all field definitions. Follow these formats for sub-steps 2-5.
 
-1. Create directory: `.workflow/plans/{YYMMDD}-{slug}/`
-   - `{YYMMDD}` = today's date (e.g., `260328`)
-   - `{slug}` = kebab-case from plan name
-   - **Store as `$PLAN_DIR`** — all subsequent CLI calls use `--plan-dir $PLAN_DIR`
+**Requirement coverage sanity check.** After writing `acceptance_specs` across all phases (sub-step 4 below), scan once: for each entry in `plan.json.scope.in_scope`, identify the spec(s) that verify it. If any requirement has only structural specs (grep-based) and no behavioral spec (runtime-exercising), add a behavioral spec before invoking the reviewer in Step 8.
+
+---
+
+1. Use the existing `$PLAN_DIR` from Step 3.7 (Phase A end). The directory `.workflow/plans/{YYMMDD}-{slug}/` already exists with the five Phase C artifact files inside. Leave them in place as a planning audit trail — they document the full Phase C evolution including audit remediations and are small enough to keep alongside the final JSON files.
 
 2. Write `plan.json` with `"status": "draft"` following the plan file format
 3. Write `phase-{N}.json` for each phase following the phase file format
 4. **Write acceptance specs:** For each phase, derive `acceptance_specs` that verify the phase delivers its requirements. Review each phase's tasks against the overall `scope.in_scope` requirements. Every requirement should trace to at least one spec across all phases. Write specs into the phase JSON files. Specs should cover functional correctness — not code quality (that's the reviewer's job).
-5. **Materialize `interface_contracts` from the Step 5c.2 audit.** Do not re-identify dependencies and do not re-check ordering — the audit is authoritative on both. This step is pure materialization.
+5. **Materialize `interface_contracts` from the Step 5c.3 audit.** Do not re-identify dependencies and do not re-check ordering — the audit is authoritative on both. This step is pure materialization.
 
-   For each Group Ordering row in the 5c.2 audit table, write an `interface_contracts` entry on the **defining phase's** JSON (the Producer phase in the row) following the format in `plan-phase-formats.md`:
-   - `contract_id` — the ID assigned in the audit (e.g., `contract-01`)
-   - Expected class / module name
-   - One-line purpose description
+   For each Group Ordering row in the 5c.3 audit table, write an `interface_contracts` entry on the **defining phase's** JSON (the Producer phase in the row) following the format in `plan-phase-formats.md`:
+   - `id` — the contract ID assigned in the audit (e.g., `contract-01`)
+   - `name` — expected class or module name
+   - `description` — one-line purpose
    - `file` — path where the interface will be created
    - `defined_in_task` — task-id within the defining phase that creates it
    - `consumed_by_phases` — list of consuming phase numbers (the Consumer column from the audit)
-   - `interfaces[]` — for each public function, class, action, or component consumers will use, specify: `name`, `type` (Redux action / class / React component / utility function / etc.), `input` (parameters/props/arguments), `output` (return value, state mutation, side effect), `behavior` (what happens when called, including conditional behavior, edge cases, and consumer-visible constraints)
+   - `interface_plan[]` — the **planner's** semantic contract. For each public function, class, action, or component consumers will use, specify: `name`, `type` (Redux action / class / React component / utility function / etc.), `purpose` (one line: what capability this delivers), `inputs_semantic` (English description of what the consumer supplies — NOT a type literal), `outputs_semantic` (English description of what the consumer can do with the result), `consumer_invariants` (behaviors and edge cases the consumer can rely on). Pre-pinning an exact TypeScript/Python type literal is permitted ONLY when re-exporting an existing project type — cite the existing type's location with `file_path:line_number` evidence in that same Pattern Claim Verification table.
+   - `interface_actual[]` — write `[]` (empty array). This field is populated later by the producing executor at execute time via `state set-interface-actual` — the planner never writes it.
 
    In each **consuming phase's** task description, add a contract reference: "Receives BridgeHelper (Phase 3 contract-01) via constructor injection."
 
-   The interface specs are the contract between producer and consumer — the producing executor implements to this spec, the consuming executor integrates based on it. If the consumer needs deeper detail, the `file` path gives it a location to read. Internal functions within a single phase remain the executor's domain — they do not appear here.
+   The planner's `interface_plan[]` is the coordination contract — semantic, stable across implementation choices. The executor's `interface_actual[]` (filled at execute time) provides the realized signature for consuming executors. If the consumer needs deeper detail at execute time, both `interface_actual[]` and the `file` path are available. Internal functions within a single phase remain the executor's domain — they do not appear here.
 6. Use the CLI to read back the plan and verify files written correctly
 
 ## Phase D: Quality Review

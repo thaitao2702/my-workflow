@@ -54,6 +54,8 @@
 |---------|---------|--------|
 | `state add-discovery PHASE_N COMPONENT WHAT WHY RISK TEST CATEGORY --plan-dir $PLAN_DIR` | Persist an executor discovery | JSON confirmation. Categories: `hidden_behavior`, `wrong_assumption`, `edge_case`, `integration_gotcha` |
 | `state add-decision PHASE_N COMPONENT DECISION REASONING ALTERNATIVES --plan-dir $PLAN_DIR` | Persist an executor decision | JSON confirmation |
+| `state set-interface-actual PHASE_N CONTRACT_ID JSON --plan-dir $PLAN_DIR` | Persist realized interface for a contract — called by the orchestrator after the producing executor completes a contract-defining task. Payload schema: `{"signature": str, "usage_example": str, "error_shape": str}`. Idempotent — calling twice for the same `(phase, contract_id)` replaces the prior entry. | JSON confirmation |
+| `state get-interface-actual PHASE_N CONTRACT_ID --plan-dir $PLAN_DIR` | Read realized interface for a contract — called before a consuming executor starts a task with a cross-phase dependency. Returns `null` if not yet written (orchestrator should fall back to `interface_plan[]`). | JSON entry with `signature`, `usage_example`, `error_shape`, `timestamp`, or literal `null` |
 | `state get-discoveries --plan-dir $PLAN_DIR` | Get all persisted discoveries | JSON array of discovery objects |
 | `state get-decisions --plan-dir $PLAN_DIR` | Get all persisted decisions | JSON array of decision objects |
 

@@ -19,7 +19,7 @@ Each row names a `{placeholder}` and where to get its value. Collect all before 
 | `{code_quality_rule_paths}` | Paths to `.workflow/rules/code/*.md` files (if any) + `.claude/rules/quality-criteria.md` |
 | `{tdd_policy_path}` | `.claude/rules/tdd-policy.md` — pass path only |
 | `{user_directives}` | Active user directives from checkpoint fields. Bulleted list. Omit section if none. |
-| `{received_interfaces}` | Interface reports from earlier phases' executors (captured by orchestrator). Format: deterministic markdown. `None` if this phase consumes no cross-phase interfaces. |
+| `{received_interfaces}` | For each cross-phase dependency, BOTH halves of the contract: `interface_plan[]` (semantic contract from the planner — name, type, purpose, inputs_semantic, outputs_semantic, consumer_invariants) AND `interface_actual[]` (realized signature persisted by the producing phase's executor via `state set-interface-actual` — signature, usage_example, error_shape). Format: deterministic markdown. When `interface_actual[]` is empty for a contract (orchestrator crash, producer didn't report it, or producer hasn't run yet), integrate against `interface_plan[]` and read source at the contract's `file` path. `None` if this phase consumes no cross-phase interfaces. |
 
 ## For Subagent — Prompt to Pass
 
@@ -138,5 +138,5 @@ Only report non-obvious findings — behaviors where someone reading the public 
 | `## Decisions` | Table: Task, Decision, Reasoning | Context for reviewer, inform doc-update |
 | `## Discoveries` | Table: Component, What, Why, Risk, Test Suggestion, Category | Persist via CLI `state add-discovery`. Category enum: `hidden_behavior`, `wrong_assumption`, `edge_case`, `integration_gotcha` |
 | `## Decisions` | Table: Task, Component, Decision, Reasoning, Alternatives | Persist via CLI `state add-decision`. Only non-obvious decisions where code doesn't explain the rationale. |
-| `## Public Interfaces` | Per contract: ID, class name, file path, signature | Capture and forward to consuming phases' executor prompts as `{received_interfaces}` |
+| `## Public Interfaces` | Per contract: ID, class name, file path, signature, usage_example, error_shape | Capture; orchestrator persists each entry via `state set-interface-actual` and later forwards both planned + realized halves to consuming executors as `{received_interfaces}` |
 | `## Escalations` | Table: Type, Task, Description | Handle before proceeding. Type enum: `blocker`, `ambiguity`, `scope_mismatch` |

@@ -88,22 +88,25 @@ Format specifications for `plan.json` and `phase-{N}.json`. Loaded at Step 7 (Wr
       "file": "src/models/user.ts",
       "defined_in_task": "task-01",
       "consumed_by_phases": [2, 3],
-      "interfaces": [
+      "interface_plan": [
         {
           "name": "UserModel",
           "type": "TypeScript class",
-          "input": "{ email: string, role: UserRole, accountId: string }",
-          "output": "User instance with account-scoped queries",
-          "behavior": "All queries are automatically scoped to the user's accountId via RLS. Calling findAll() only returns users within the same account."
+          "purpose": "Domain model for users with account isolation",
+          "inputs_semantic": "User attributes (email, role, accountId) when constructing; query parameters when reading",
+          "outputs_semantic": "User instances whose queries are automatically scoped to the caller's account",
+          "consumer_invariants": "All queries automatically filter to the caller's accountId via RLS. findAll() returns only users within the same account."
         },
         {
           "name": "UserRole",
           "type": "TypeScript enum",
-          "input": "N/A",
-          "output": "'admin' | 'editor' | 'viewer'",
-          "behavior": "Used by permission checks in consuming phases. 'admin' bypasses all permission gates."
+          "purpose": "Permission level identifier consumed by access checks",
+          "inputs_semantic": "N/A — type-level construct",
+          "outputs_semantic": "One of three role values used in permission checks",
+          "consumer_invariants": "Admin role bypasses all permission gates; editor and viewer roles fall through to per-resource checks."
         }
-      ]
+      ],
+      "interface_actual": []
     }
   ]
 }
@@ -133,9 +136,15 @@ Format specifications for `plan.json` and `phase-{N}.json`. Loaded at Step 7 (Wr
 - `interface_contracts[].file`: Expected file path where this interface will be created. Gives consuming executors a concrete location to read for deeper implementation detail.
 - `interface_contracts[].defined_in_task`: The task ID within this phase that creates this class or module.
 - `interface_contracts[].consumed_by_phases`: Array of phase numbers that import or call this interface. Used by the reviewer to verify sequential ordering and cross-references.
-- `interface_contracts[].interfaces`: Array of interface specs — one entry per public function, class, action, or component that consumers will use. Each entry has:
+- `interface_contracts[].interface_plan`: **Planner-owned, written at Step 7.** Array of semantic specs — one entry per public function, class, action, or component consumers will use. Carries planner-time coordination data only; never exact type literals (exception: re-exporting an existing project type, in which case cite its `file_path:line_number` evidence). Each entry has:
   - `name`: function/class/action/component name
   - `type`: what kind of interface (e.g., "Redux action creator", "TypeScript class", "React component", "utility function")
-  - `input`: parameters, props, or arguments the consumer passes
-  - `output`: return value, state mutation, rendered output, or side effect
-  - `behavior`: what happens when called — focus on behavior the consumer needs to know, not internal implementation. Include conditional behavior, edge cases, and constraints that affect how consumers use it.
+  - `purpose`: one line — what capability this delivers to consumers
+  - `inputs_semantic`: English description of what the consumer supplies — NOT a type literal
+  - `outputs_semantic`: English description of what the consumer can do with the result — NOT a type literal
+  - `consumer_invariants`: behaviors and edge cases consumers can rely on (empty/null handling, idempotency, ordering, etc.)
+- `interface_contracts[].interface_actual`: **Executor-owned, written at execute time** via `state set-interface-actual` after the producing task completes. At plan time this field MUST be `[]`. Each later-added entry has:
+  - `signature`: realized TypeScript/language signature for this interface
+  - `usage_example`: minimal call snippet showing intended use
+  - `error_shape`: how failures are encoded (exception types, error result envelopes, etc.)
+  - Why split into two fields: the JSON shape itself enforces the boundary — planner physically cannot write into the executor's field because it's omitted at plan time. Diff-friendly: when execute-time impl changes, only `interface_actual[]` changes, leaving the plan record stable.

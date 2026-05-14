@@ -1,0 +1,7 @@
+{
+  "gitlab": {
+    "base_url": "https://gitlab.com",
+    "token": "glpat-FWVCrZWk7C6RqR-3EJCgK2M6MQpvOjEKdToxYTQxcQ8.01.170sacokd",
+    "default_project": "998-V2/documents"
+  }
+}
