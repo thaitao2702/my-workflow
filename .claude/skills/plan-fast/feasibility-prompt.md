@@ -1,6 +1,6 @@
-# Feasibility Validator Prompt Template (plan-fast — single plan.md)
+# Feasibility Validator Prompt Template (plan-fast — single draft.md)
 
-This contract drives the `feasibility-validator` agent against a **single markdown plan** (`plan.md`), not the 5-file artifact set. The prompt below is self-sufficient — it tells the subagent to read one file and overrides any prior expectation of separate capability/decision/audit files.
+Drives the `feasibility-validator` agent against the **working draft** (`draft.md`) — not against `plan.md`, which doesn't exist yet at this point in the flow. The prompt below overrides the agent's default methodology in two ways: it tells the subagent to read **one** file (not the five-file artifact set the persona describes) and it requires a **two-phase load** so that scenario questions are pre-registered from the requirement *before* the draft is read.
 
 ## For Orchestrator — Data to Collect
 
@@ -8,7 +8,7 @@ Collect paths as raw strings; pass inline blocks as raw bulleted text. Do not pa
 
 | Placeholder | Source |
 |-------------|--------|
-| `{plan_md_path}` | `$PLAN_DIR/plan.md` — the in-progress plan (Scope, Capabilities, Per-Capability Analysis, Component Notes, Phases, Tasks, Composition Audit all present; Feasibility/Risks may be empty) |
+| `{draft_md_path}` | `$PLAN_DIR/draft.md` — the in-progress draft (Scope, Capabilities, Per-Capability Analysis, Component Notes, Phases, Tasks, Composition Audit all present; `§feasibility-full` and `§risks` may be empty) |
 | `{project_overview_path}` | `.workflow/project-overview.md` — pass the path, or `None` if the file doesn't exist |
 | `{requirements_in_scope}` | Inline bulleted list of confirmed in-scope requirements from Phase A (Steps 2–3). One `- requirement` per line. |
 | `{user_clarification}` | Inline bulleted list of every clarification answer/constraint from Phase A. One `- answer or constraint` per line. If none occurred, pass `- None — requirements were unambiguous as written`. |
@@ -17,67 +17,112 @@ Collect paths as raw strings; pass inline blocks as raw bulleted text. Do not pa
 
 Replace `{placeholders}` with collected values. Pass everything below this line as the subagent prompt.
 
-You are validating a single markdown execution plan. **Ignore any instinct to load five separate artifact files — this plan is one file.**
+You are validating the working draft of a markdown execution plan. **Ignore any instinct to load five separate artifact files — this draft is one file.** This task also requires a **strict two-phase load**: you must generate scenario questions from the requirement BEFORE reading the draft. Reading the draft first would let your questions get shaped by what the plan happens to contain, defeating the purpose of an independent review.
 
-**Step 1 — Load context in parallel.** Issue these Read calls in a single response:
-- `{plan_md_path}` — the whole plan. Its sections: `## Scope`, `## Capabilities`, `## Per-Capability Analysis & Approach Selection`, `## Component Notes`, `## Phases`, `## Tasks` (per-phase tables with a `Done when` column), `## Composition Audit` (table with Status/Notes).
+### Phase 1 — Load REQUIREMENT context only
+
+Issue these Read calls (and ONLY these) in a single response:
 - `{project_overview_path}` — architectural context (skip if `None`).
 
-**Step 2 — Read the in-scope requirements and user-clarification block carefully.**
+Then read the inline blocks below carefully. **Do NOT Read `{draft_md_path}` in this phase.** Pre-registration depends on this ordering.
 
 **In-scope requirements (from Phase A):**
 {requirements_in_scope}
 
-**User-clarification block (authoritative — do NOT flag gaps the user already resolved):**
+**User-clarification block (authoritative — do NOT flag gaps the user has already resolved):**
 {user_clarification}
 
-**Validator scope — what to check, what NOT to check.** Your job is **capability coverage**, not implementation correctness.
+### Phase 2 — Pre-register scenarios and invariant questions (BEFORE reading the draft)
 
-| Check | In scope? |
-|-------|-----------|
-| Does each in-scope requirement map to ≥1 task whose `Done when` delivers it? | **YES** — this IS feasibility |
-| Are cross-phase dependencies sequenced (producer phase's execution group strictly earlier than consumer's)? | **YES** — planning-level invariant |
-| Is each task's file path plausible (exists, or a sensible new location for the project layout)? | **YES** — directory / convention level only |
-| Is there a capability gap (a user-visible scenario no task addresses)? | **YES** — flag as NOT_SATISFIED |
-| Is an API body schema / exact symbol / component name / transform shape correct? | **NO** — execute-time; the executor reads source |
-| Mechanism choices (`useState` vs `useRef`, `loadable` vs `lazy`, framework config flags)? | **NO** — execute-time |
+From the requirement + clarifications alone — without touching `{draft_md_path}` — derive scenarios and their invariant questions. **Emit them in your response text now, before any further tool call.** This commits the pre-registered list.
 
-**Stop rule.** If you are reading source to verify a type shape, an exact name, a transform's correctness, or a config flag — STOP; that's the executor's job. Verify the plan has all the tasks needed to deliver each capability, properly sequenced. If a task's `Done when` prescribes HOW (URL, body schema, exact names), do NOT flag the detail as wrong — flag the over-specification itself via the `implementation_in_plan` escalation.
+**Scenario floor** (must hit the floor; no upper cap — pick as many as the requirement warrants):
 
-**Step 3 — Requirement Satisfaction Trace.** For each in-scope requirement, trace which tasks (by Phase / task-id / name) together deliver it, name the concrete user/system-visible artifact that exists once those tasks complete (state the capability, not the implementation), and assign a Verdict: `DEMONSTRABLY_SATISFIED` (tasks deliver the capability read as outcomes) / `PARTIALLY_SATISFIED` (a sub-step is missing — name it) / `NOT_SATISFIED` (no task delivers it). Non-satisfied verdicts require a Gap stating the missing **capability**, not a missing detail.
+- For **behavioral requirements** (the feature changes observable behavior): ≥1 happy path + ≥1 edge case + ≥1 failure case.
+- For **refactors / non-behavioral changes** (rename, type changes, internal restructure): ≥1 main-flow preservation + ≥1 caller-impact + ≥1 boundary invariant.
 
-**Step 4 — Premortem.** Six months later the plan shipped broken. Produce exactly 3 planning-level failure modes (ones a careful executor would NOT catch by reading source): uncovered user-visible scenario, cross-phase coordination gap (no task wires producer to consumer), a demanded capability no task delivers, or a component-note constraint no task addresses. Exclude execute-time failures (wrong field name, schema mismatch, transform logic, intra-component race). Each row: the capability-level failure, the cited plan element creating the risk (task name / phase # / audit row / component note), and a minimal mitigation (a NEW or MODIFIED task) OR `ACCEPTED RISK: [rationale grounded in the clarification block or a project-overview principle]`.
+For each scenario, write a `**Why this scenario:**` justification line (one of: most-likely user flow / highest-blast-radius failure / boundary condition / etc.).
 
-**Step 5 — Severity.**
-- `PASS` — every Verdict DEMONSTRABLY_SATISFIED AND every premortem mitigation already covered by the plan or a justified ACCEPTED RISK
-- `FAIL_REVISION_NEEDED` — any PARTIALLY_SATISFIED / NOT_SATISFIED, OR any premortem mitigation requiring a plan revision
-- `FAIL_AMBIGUOUS` — any row needs clarification (see Escalations)
+For each scenario, write **3–7 invariant questions** in interrogative form. Examples:
+- Behavioral (P2P transfer happy path): *"Is the sender's balance reduced by exactly the transfer amount? Is the receiver credited the same amount? Is a transaction record created naming both account IDs? Is the operation atomic on partial failure?"*
+- Behavioral (P2P concurrent edge): *"If two transfers from the same sender land in the same instant, are both reflected with no lost update?"*
+- Refactor (rename helper across the codebase): *"Does the plan touch every existing caller? Do call sites have identical observable behavior before and after? Is no consumer left holding the old name?"*
 
-When uncertain between PASS and FAIL_REVISION_NEEDED, choose FAIL_REVISION_NEEDED.
+**Question rules:**
+- **Observable / externally verifiable only.** Ask about behavior a user or downstream system would notice. Do NOT ask about internal implementation choices (which data structure, which hook, which framework flag) — that is the executor's domain.
+- **Flow-level is allowed.** A question may span multiple requirements or a whole flow (e.g., *"Does the plan keep the transfer atomic across the credit and debit tasks?"*). Questions do NOT need 1:1 mapping to scope bullets — the Trace handles that.
+- **Decision-forcing.** Each question must be answerable as "yes, here's the evidence" / "weak, here's what's nearby" / "no, missing." Open-ended questions are not allowed.
 
-**Rules:** every claim cites a specific plan element; the clarification block is authoritative; mitigations are minimal (escalate if the minimum change is structural); ACCEPTED RISK is valid only when its rationale references the clarification block, a project-overview principle, or a documented trade-off.
+**Stop rule.** If a question would require reading source code to verify a type literal, exact name, transform shape, or framework flag — you have drifted into execute-time territory. Rewrite it at the observable level. If you genuinely cannot, surface it as `implementation_in_plan` in Escalations.
 
-**Step 6 — Output in this exact format:**
+### Phase 3 — NOW read the draft
+
+Issue this Read call:
+- `{draft_md_path}` — the whole draft. Sections you will use: `§scope`, `§capabilities`, `§analysis` (Per-Capability Analysis), `§component-notes`, `§phases`, `§tasks` (per-phase tables with `Done when`, `Provides`, `Needs` columns), `§audit` (Composition Audit with Status/Notes).
+
+Your pre-registered questions are already committed in the response above. They do not change based on what you find in the draft.
+
+### Phase 4 — Requirement Satisfaction Trace
+
+One row per in-scope requirement. For each requirement, trace through the plan to find the tasks that, together, deliver it. The trace stays at the level of "which tasks contribute" — do NOT verify implementation details. Produce:
+
+- **Plan Path** — comma-separated tasks (e.g., `Ph1 / task-02 (Add CSV serializer) → Ph2 / task-01 (Wire serializer into endpoint)`)
+- **Artifact After Plan Completes** — the user-visible / system-visible outcome that exists once all listed tasks complete. State the capability, not the implementation.
+- **Verdict** — `DEMONSTRABLY_SATISFIED` (listed tasks deliver the capability when read as outcomes; no gap requires reading source to disprove) / `PARTIALLY_SATISFIED` (a sub-step is missing — name it) / `NOT_SATISFIED` (no task delivers this requirement).
+- **Gap** — required for non-DEMONSTRABLY_SATISFIED. State the missing **capability**, not the missing detail.
+
+### Phase 5 — Verdict the pre-registered scenario questions against the plan
+
+For each question from Phase 2 (in order, scenario by scenario): find the **plan element(s)** that evidence it.
+
+- **Evidence may be a combination.** A single task, multiple tasks across phases, a task plus an audit row, or a task plus a `Provides`/`Needs` interface — cite ALL relevant elements together (e.g., `Ph1 / task-02 + Ph2 / task-01 + audit #3`). Flow-level invariants typically require multi-element evidence; that is expected.
+- **Verdicts:**
+  - `EVIDENCED` — the cited plan elements collectively deliver the invariant. The trail from setup to invariant-holding outcome is concrete.
+  - `WEAK` — the plan elements touch the area but don't collectively state this invariant. Cite what's nearby and name the gap.
+  - `MISSING` — no plan element delivers this invariant. Cite `—` and name what's missing.
+- **Per-scenario verdict:** `PASS` (all questions `EVIDENCED`) / `NEEDS_REVISION` (any `MISSING` or `WEAK`) / `AMBIGUOUS` (a question can't be evaluated without further clarification — surface in Escalations).
+
+### Phase 6 — Severity
+
+- `PASS` — every Trace row `DEMONSTRABLY_SATISFIED` AND every Scenario `PASS`.
+- `FAIL_REVISION_NEEDED` — any Trace row non-satisfied, OR any Scenario `NEEDS_REVISION` (i.e., any `MISSING` or `WEAK` evidence anywhere). Per orchestrator policy, MISSING/WEAK always forces a plan revision round — never auto-accepted.
+- `FAIL_AMBIGUOUS` — any row or scenario `AMBIGUOUS`.
+
+When uncertain between PASS and FAIL_REVISION_NEEDED, choose FAIL_REVISION_NEEDED — surfacing a false positive is cheap; missing a real feasibility gap is expensive.
+
+**Rules across all rows:**
+- Every claim cites a specific plan element (task, phase, audit row, file in `§component-notes`, decision row in `§analysis`). No vague claims.
+- The user-clarification block is authoritative. Do NOT flag gaps the user has already resolved.
+
+### Phase 7 — Output in this exact format
 
 ```
 ## Status
 **Result:** PASS | FAIL_REVISION_NEEDED | FAIL_AMBIGUOUS
 **Trace_Pass_Count:** {N}/{Total}
-**Critical_Gaps:** {count of NOT_SATISFIED entries}
+**Scenarios_Passed:** {N}/{Total}
+**Missing_Evidence:** {count of MISSING + WEAK across all scenarios}
 
 ## Requirement Satisfaction Trace
 | Requirement | Plan Path | Artifact After Plan Completes | Verdict | Gap |
 |-------------|-----------|------------------------------|---------|-----|
-| {requirement} | {Phase / task-id / name list} | {concrete artifact} | DEMONSTRABLY_SATISFIED ∣ PARTIALLY_SATISFIED ∣ NOT_SATISFIED | {gap or —} |
+| {requirement text} | {plan elements} | {concrete artifact} | DEMONSTRABLY_SATISFIED ∣ PARTIALLY_SATISFIED ∣ NOT_SATISFIED | {gap or —} |
 
-## Premortem
-*Top 3 likely failure modes:*
+## Scenario Walkthrough
 
-| # | Failure Mode | Plan Element Creating the Risk | Suggested Mitigation |
-|---|--------------|--------------------------------|----------------------|
-| 1 | {specific capability-level failure} | {cited plan element} | {plan change OR "ACCEPTED RISK: [rationale]"} |
+### Scenario 1: {name} — {happy ∣ edge ∣ failure ∣ main-flow-preservation ∣ caller-impact ∣ boundary}
+**Why this scenario:** {one-line justification}
+**Setup:** {the concrete situation in domain terms}
+
+**Invariants (must hold after plan executes):**
+| # | Question | Evidence (plan elements — may cite multiple) | Verdict |
+|---|----------|----------------------------------------------|---------|
+| 1 | {question} | `Ph<X> / task-NN` + `Ph<Y> / task-MM` + audit #K (or `—`) | EVIDENCED ∣ WEAK ∣ MISSING |
 | 2 | ... | ... | ... |
-| 3 | ... | ... | ... |
+
+**Scenario Verdict:** PASS ∣ NEEDS_REVISION ∣ AMBIGUOUS
+
+### Scenario 2: ...
 
 ## Escalations
 | Type | Description |
@@ -85,28 +130,28 @@ When uncertain between PASS and FAIL_REVISION_NEEDED, choose FAIL_REVISION_NEEDE
 | {clarification_conflict ∣ ambiguous_requirement ∣ external_unknown ∣ implementation_in_plan} | {details with citation} |
 ```
 
-Format rules:
-- **Result:** exact enum string
-- **Trace_Pass_Count:** integer N (DEMONSTRABLY_SATISFIED count) over integer Total (total in-scope requirements)
-- **Critical_Gaps:** integer count of NOT_SATISFIED verdicts
-- **Requirement Satisfaction Trace:** one row per in-scope requirement, no exceptions
-- **Premortem:** exactly 3 rows. If fewer than 3 genuine risks, row 3 is `| 3 | None identified beyond top 2 — plan is well-anchored given the clarification block | — | — |`
-- **Escalations:** write `| None | None |` if none apply; never omit the section
+**Format rules:**
+- **Result:** exact enum string from the three options.
+- **Trace_Pass_Count:** integer N (`DEMONSTRABLY_SATISFIED` count) over integer Total (total in-scope requirements).
+- **Scenarios_Passed:** integer N (Scenario `PASS` count) over integer Total (total scenarios you ran).
+- **Missing_Evidence:** integer count of `MISSING` + `WEAK` cells across all scenario invariant tables.
+- **Requirement Satisfaction Trace:** one row per in-scope requirement, no exceptions.
+- **Scenario Walkthrough:** every scenario you pre-registered in Phase 2 appears here with its Setup, Invariants table, and Scenario Verdict — no fewer, no more.
+- **Escalations:** write `| None | None |` if none apply; never omit the section.
 
 ## For Orchestrator — Expected Output
 
 | Section | Key Fields | Parse For |
 |---------|-----------|-----------|
 | `## Status` | `**Result**`: PASS ∣ FAIL_REVISION_NEEDED ∣ FAIL_AMBIGUOUS | Decide: accept, revise, or escalate |
-| | `**Trace_Pass_Count**`: N/Total | Coverage gauge |
-| | `**Critical_Gaps**`: integer | Triage priority |
-| `## Requirement Satisfaction Trace` | `Requirement`, `Plan Path`, `Artifact After Plan Completes`, `Verdict`, `Gap` | For each Verdict ≠ DEMONSTRABLY_SATISFIED: Edit the Tasks/Phases sections of `plan.md` to close the Gap |
-| `## Premortem` | `Failure Mode`, `Plan Element Creating the Risk`, `Suggested Mitigation` | `ACCEPTED RISK` → hold for the Step 10 user checkpoint + add to Risks. Plan-changing mitigation → Edit `plan.md`, then re-spawn. |
+| | `**Trace_Pass_Count**`: N/Total; `**Scenarios_Passed**`: N/Total; `**Missing_Evidence**`: int | Coverage + depth gauge |
+| `## Requirement Satisfaction Trace` | `Requirement`, `Plan Path`, `Artifact After Plan Completes`, `Verdict`, `Gap` | For each non-DEMONSTRABLY_SATISFIED verdict: Edit `§tasks` in draft.md to close the Gap |
+| `## Scenario Walkthrough` | Per scenario: name, classification, `Why`, `Setup`, Invariants table (`Question`, `Evidence`, `Verdict`), `Scenario Verdict` | For each `MISSING` or `WEAK` invariant: Edit `§tasks` in draft.md (or `§phases` / `§analysis` if structural) to add or strengthen a task whose `Done when` delivers the invariant. Then re-spawn. |
 | `## Escalations` | Type, Description | If any rows: present to user before continuing |
 
 **Orchestrator action by Result:**
-- `PASS` → paste the Trace + Premortem verbatim into the `## Feasibility` section of `plan.md`; fold mitigations/ACCEPTED RISKs into `## Risks`; proceed to Step 10
-- `FAIL_REVISION_NEEDED` → Edit the affected sections of `plan.md` (Tasks, Phases, or Per-Capability Analysis); re-spawn (max 2 revision rounds; if still failing after 2, present findings to the user and ask how to proceed)
-- `FAIL_AMBIGUOUS` → present Escalations to the user; on receiving clarification, update the inline `{user_clarification}` block and re-spawn
+- `PASS` → paste the Trace + Scenario Walkthrough verbatim into the `§feasibility-full` block of `draft.md` (including the pre-registered questions — they are part of the audit trail); fold any open or `WEAK`-mitigation notes into the `§risks` block of `draft.md`; proceed to Step 10.
+- `FAIL_REVISION_NEEDED` → for each non-satisfied Trace row AND for each `MISSING`/`WEAK` invariant, Edit the affected sections of `draft.md` (`§tasks` most often; `§phases` or `§analysis` if the gap is structural). Re-spawn the subagent (**max 2 revision rounds total**). If still failing after 2 rounds, present findings to the user and ask how to proceed.
+- `FAIL_AMBIGUOUS` → present Escalations to the user; on receiving clarification, update the inline `{user_clarification}` block (and Edit `§clarification-log` in draft.md to record the new round) and re-spawn.
 
 Escalation type meanings: `clarification_conflict` (clarification block contradicts the plan), `ambiguous_requirement` (an in-scope item can't be evaluated), `external_unknown` (depends on an unverified external system), `implementation_in_plan` (a `Done when` prescribes HOW — rewrite it as an outcome before proceeding).
