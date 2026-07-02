@@ -79,3 +79,6 @@ Every prompt template has three sections:
 | template-applier | `.claude/skills/template-apply/template-applier-prompt.md` |
 | dependency-resolver | `.claude/skills/analyze/dependency-resolver-prompt.md` |
 | acceptance-verifier | `.claude/skills/execute/acceptance-verifier-prompt.md` |
+| feasibility-validator (plan-fast path) | `.claude/skills/plan-fast/feasibility-prompt.md` |
+| executor-fast | `.claude/skills/execute-fast/executor-fast-prompt.md` |
+| reviewer (code, fast path) | `.claude/skills/execute-fast/reviewer-fast-prompt.md` |

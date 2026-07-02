@@ -15,7 +15,7 @@ Collect paths as raw strings; pass computed extracts inline.
 | `{risks}` | plan.md `§risks`, inline |
 | `{phase_goal}` | The phase's line from plan.md `§phases`, inline |
 | `{phase_task_outcomes}` | This phase's task rows from `§tasks` — Task ID, Files, `Provides`, `Done when` — inline |
-| `{quality_rule_paths}` | `.claude/rules/quality-criteria.md`, `.claude/rules/security-gates.md` (+ `.workflow/rules/code/*.md` if present), comma-separated paths |
+| `{rules_paths}` | **Every** `.md` file under `.workflow/rules/` — glob `.workflow/rules/**/*.md` (recursive; all subfolders), pass all of them, no hard-coded subset. Comma-separated raw paths (`None` if the folder has no `.md` files). This is the **same rule set the executor obeys**. |
 | `{realized_interfaces}` | The `## Realized Interfaces` blocks this phase produced or consumed, from `progress.md`, inline (or `None`) |
 
 ## For Subagent — Prompt to Pass
@@ -48,7 +48,7 @@ You are reviewing the code changes of one phase of a markdown execution plan. Th
 **Realized Interfaces (provided/consumed cross-phase contracts):**
 {realized_interfaces}
 
-**Context files (load in parallel before reviewing):** {quality_rule_paths}
+**Context files (load in parallel before reviewing) — every rule you review against:** {rules_paths}
 
 **Review against all 6 dimensions:**
 
@@ -56,7 +56,7 @@ You are reviewing the code changes of one phase of a markdown execution plan. Th
 2. **Scope compliance** — only files within the phase's task `Files` changed; no work outside `§scope`.
 3. **Architectural alignment** — implementation matches the `Committed approach` lines and respects `§component-notes` constraints.
 4. **Risk mitigation** — risks in `§risks` relevant to this phase are handled, not ignored or mis-mitigated.
-5. **Code quality & security** — passes every loaded rule in {quality_rule_paths}; no security-gate violation (hardcoded secrets, injection, missing auth, destructive ops).
+5. **Code quality & security** — passes every loaded rule in {rules_paths}; no security-gate violation (hardcoded secrets, injection, missing auth, destructive ops).
 6. **Convention & interface compliance** — matches existing codebase patterns; any `Provides` contract's realized interface is internally consistent with how consuming code (if in this diff) uses it.
 
 **Output in this exact format:**

@@ -109,7 +109,7 @@ For every `Needs Ph<X> contract-NN` in this phase's task rows: read the matching
 - If this phase has no `Needs`: `received_interfaces` = `None`.
 
 ### Step 3b: Spawn the executor
-Read the prompt template `.claude/skills/execute-fast/executor-fast-prompt.md`. Per its **For Orchestrator — Data to Collect**, collect the items (paths to `plan.md`, `progress.md`, project overview, `.claude/rules/security-gates.md`, `.claude/rules/quality-criteria.md`; the phase number; this phase's task rows verbatim; `received_interfaces`). Fill the `{placeholders}` in **For Subagent**. Spawn the **executor-fast** subagent (`.claude/agents/executor-fast.md`) **in foreground**, one spawn for the whole phase.
+Read the prompt template `.claude/skills/execute-fast/executor-fast-prompt.md`. Per its **For Orchestrator — Data to Collect**, collect the items (paths to `plan.md`, `progress.md`, project overview, **every `.md` file under `.workflow/rules/`** — glob `.workflow/rules/**/*.md` recursively, all of them, no hard-coded subset (`None` if the folder has none); the phase number; this phase's task rows verbatim; `received_interfaces`). Fill the `{placeholders}` in **For Subagent**. Spawn the **executor-fast** subagent (`.claude/agents/executor-fast.md`) **in foreground**, one spawn for the whole phase.
 
 The executor updates `progress.md` itself (task rows → active/done/failed; appends realized-interface blocks for its `Provides` contracts).
 
@@ -120,7 +120,7 @@ Per the template's **For Orchestrator — Expected Output**:
 - `## Public Interfaces`: confirm every `Provides` contract for this phase has a realized block in `progress.md` `## Realized Interfaces`. If the executor reported one but didn't write it, write it now from the envelope; if it's entirely missing and a later phase `Needs` it → escalate.
 
 ### Step 3d: Phase code review
-Read `.claude/skills/execute-fast/reviewer-fast-prompt.md`. Per its **For Orchestrator — Data to Collect**, collect data (the phase's `git diff`; plan `§scope`, `§component-notes`, `§risks`, the phase goal line from `§phases`, this phase's task `Done when` cells; quality/security rule paths). Fill **For Subagent**. Spawn the **reviewer** subagent (`.claude/agents/reviewer.md`, reused) **in foreground**, one-shot.
+Read `.claude/skills/execute-fast/reviewer-fast-prompt.md`. Per its **For Orchestrator — Data to Collect**, collect data (the phase's `git diff`; plan `§scope`, `§component-notes`, `§risks`, the phase goal line from `§phases`, this phase's task `Done when` cells; **every `.md` file under `.workflow/rules/`** — the same rule set the executor received, via glob `.workflow/rules/**/*.md`). Fill **For Subagent**. Spawn the **reviewer** subagent (`.claude/agents/reviewer.md`, reused) **in foreground**, one-shot.
 
 Parse `## Status` `**Result**`: `PASS` → proceed. `FAIL` → read `**Failed Dimensions**` + each `**Fix Required**`; fix the issues yourself (you have full plan context), re-spawn the reviewer (max 2 fix rounds). Still failing after 2 → present to the user, ask how to proceed. Present the review outcome to the user before continuing.
 
@@ -162,7 +162,7 @@ If no runner is detectable: skip and log "Regression test skipped — no runner 
 
 ## Constraints
 - Never write or edit `plan.md`. Never assume JSON/CLI/state.json.
-- Security gates (`.claude/rules/security-gates.md`) are non-negotiable and override speed.
+- Security gates in the loaded `.workflow/rules/` set are non-negotiable and override speed.
 - TDD is a documented deviation on this path: verify by each task's `Done when` outcome, not by a mandatory test-first cycle. The end-of-run regression test is the only test gate.
 - Do not invoke `/doc-update` or `/analyze` — they are out of scope for the fast path.
 
