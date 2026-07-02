@@ -1,18 +1,14 @@
 ---
 description: |
   Speed-optimized planning skill that keeps decomposition rigor but strips the
-  heavy machinery. Produces TWO files in `$PLAN_DIR`: `draft.md` (full working
-  artifact + audit trail — clarification log, decision classifications, rejected
-  approach evaluations, composition audit, full feasibility output) and
-  `plan.md` (distilled final artifact — what the executor reads). draft.md is
-  built incrementally via tagged-block Edits across Steps 1–9; plan.md is
-  materialized at Step 10 by distilling draft.md and frozen at Step 11.
-
-  Flow: requirement clarification, EARLY capability confirmation, parallel
-  codebase discovery, per-capability approach analysis, phase/task drafting
-  with a composition audit, and an independent feasibility subagent — then a
-  user checkpoint where plan.md is written to disk for review. No JSON, no
-  acceptance/test specs, no analysis-doc reads, no multi-dimension plan review.
+  heavy machinery. Produces a single human-readable markdown plan through
+  requirement clarification, EARLY capability confirmation, parallel codebase
+  discovery, per-capability approach analysis, phase/task drafting with a
+  composition audit, and a coverage self-check — then one user checkpoint.
+  Grounding is done UPFRONT during discovery — every integration point is verified
+  LIVE against the real code as it is discovered — so there is no separate late
+  grounding-verification subagent. No JSON schemas, no acceptance/test specs, no
+  analysis-doc reads, no multi-dimension plan review.
 
   Accepts requirements from text, file path, GitHub issue, GitLab issue, or
   Jira ticket — invokes the matching skill to fetch external sources.
@@ -29,24 +25,24 @@ description: |
 
 # /plan-fast — Fast Markdown Plan with Capability Rigor
 
-You are producing a focused, human-readable execution plan as two markdown files. `draft.md` is your **working artifact and audit trail** — everything goes there as you plan, edited section by section via tagged-block discipline. `plan.md` is the **distilled final artifact** the executor (and human readers) consume — materialized once at Step 10 by selecting what's needed for execution from draft.md, and frozen at Step 11.
-
-Speed comes from: confirming capabilities with the user EARLY (before deep design), parallelizing codebase discovery, a single materialization step, and only one user checkpoint.
+You are producing a focused, human-readable execution plan as a single markdown file. The plan keeps the reasoning that prevents directional mistakes — requirement clarification, capability decomposition, per-capability approach selection, a cross-phase composition audit, and grounding every integration point against the real code DURING discovery (verified live, not guessed) — while dropping JSON materialization, acceptance/test specs, and the 13-dimension review. Speed comes from confirming capabilities with the user EARLY (before deep design), parallelizing codebase discovery, grounding integration points (instead of guessing them) so executors don't hit crashes, and a single user checkpoint.
 
 **Input:** `/plan-fast "text"`, `/plan-fast ./path/to/file.md`, `/plan-fast gh:123`, `/plan-fast gl:456`, `/plan-fast jira:PROJ-789`
-**Output:** `.workflow/plans/{YYMMDD}-{slug}/plan.md` (final, executor input — run with `/execute-fast`) and `.workflow/plans/{YYMMDD}-{slug}/draft.md` (audit trail, frozen at approval).
-
-## Expert Vocabulary Payload
-
-**Decomposition:** capability (MECE functional unit), decision classification (constrained / conventional / significant), cascade trace, decide-then-descend, approach evaluation, committed approach
-
-**Composition:** execution group (parallel-safe), phase grouping, transition (runtime data/control flow), external consumer (interface change with outside callers), group ordering (producer before consumer), composition audit, remediation
-
-**Validation:** requirement satisfaction trace, scenario walkthrough (pre-registered invariant questions, multi-element evidence, EVIDENCED/WEAK/MISSING verdicts), author-bias separation, capability coverage (WHAT not HOW), executor-source test
-
-**Artifacts:** draft.md (working file, tagged-block Edits), plan.md (distilled, materialized once per iteration), distillation rules (which draft sections become which plan sections), frozen-at-approval marker
+**Output:** `.workflow/plans/{YYMMDD}-{slug}/plan.md` — a markdown plan. It is NOT consumed by the execution skill; it is for human reading, manual execution, or discussion.
 
 ## Anti-Pattern Watchlist
+
+### Ungrounded concrete assertion (the #1 feasibility killer)
+- **Detection:** Naming a *specific* integration point as fact without having read it in the real codebase — a permission/role constant, an existing symbol or handler to hook into, the host where a long-lived process attaches, an existing file path, a response field, an existing endpoint. Symptoms: inventing a constant that exists nowhere; asserting a handler runs in a module/entry point you never opened; citing a path that doesn't exist.
+- **Resolution:** Every concrete that touches *existing* code must be one of three things, never a guess:
+  1. **Grounded** — you read it; cite `path:line` in `§component-notes` and reuse the *real* symbol/path/value.
+  2. **Reused analog** — the exact name isn't confirmed but a real sibling exists; reuse it rather than minting a new one, and note the assumption.
+  3. **Deferred** — genuinely unknown AND non-core; the task says "locate the exact insertion point (see `§component-notes`)". Deferral is for specifics the executor resolves in seconds without re-deriving design (an exact line, a field's precise name/shape) — NOT for a core decision (see the next anti-pattern).
+- A wrong *invented* concrete scores worse than an honest deferral — but **a deferred core decision scores worse than a grounded committed one.** When unsure: reuse a real analog and commit with a stated assumption. Invent nothing; defer only non-core specifics.
+
+### Over-deferral of a core decision
+- **Detection:** Deferring the thing the capability hinges on — *where* the user's action is intercepted, *which* long-lived host runs the background task, *which* existing module the new flow attaches to — so the plan reads "locate the intercept point" / "add a host if none exists" for a load-bearing choice. The executor cannot even START without re-doing the design you skipped. This tanks Completeness and Actionability even when Feasibility looks honest. (It is the equal-and-opposite error to "Ungrounded concrete assertion": over-correcting from confidently-wrong into timidly-deferred.)
+- **Resolution:** For any **core entry point / host / intercept**, commit to the best-grounded real candidate from discovery and state the assumption — e.g., "route the change through the existing write/save handler at `<path:line>` — the established edit path; assumes the sensitive item maps to that surface, confirm with the owner." Commit + assumption + `path:line` beats deferral. The **executor-start test:** "Can the executor begin this task without making a design decision I left open?" If no, you must make it. Deferral is only legitimate for a specific the executor fills in trivially (exact line, exact field name) — never the design choice itself.
 
 ### Skipping early capability confirmation
 - **Detection:** Decomposing into capabilities and then proceeding straight to approach analysis or phase design without pausing for the user to confirm the capability list.
@@ -56,42 +52,33 @@ Speed comes from: confirming capabilities with the user EARLY (before deep desig
 - **Detection:** Treating "no analysis docs" or "no tests" as steps to perform ("check that no analysis doc is read"). This skill simply has no such machinery — there is nothing to suppress.
 - **Resolution:** Do the positive action: discovery reads the project overview and runs targeted Explore agents. Absence of the dropped machinery is structural, not a checklist item.
 
-### Full-file rewrite of draft.md
-- **Detection:** Using the Write tool on `draft.md` after the Step 4 skeleton exists, or regenerating untouched sections while editing one.
-- **Resolution:** After the skeleton is created, every change to draft.md is **Read `draft.md` → Edit exactly one tagged block**. Untouched sections must remain byte-identical — that is the determinism guarantee. Regenerating the whole file lets confirmed sections silently drift. (Note: `plan.md` is the opposite — it's written whole at Step 10 each iteration. The two files have different editing disciplines on purpose.)
-
-### Editing plan.md directly
-- **Detection:** Applying changes to `plan.md` to react to user feedback at Step 10, instead of editing `draft.md` and re-materializing.
-- **Resolution:** `plan.md` is a *derivative* of `draft.md`. All revisions go to draft.md; plan.md is re-written from scratch at Step 10 after each draft change. Editing plan.md directly causes the two files to diverge — the audit trail no longer matches the final plan.
+### Full-file rewrite of plan.md
+- **Detection:** Using the Write tool on `plan.md` after the Step 4 skeleton exists, or regenerating untouched sections while editing one.
+- **Resolution:** After the skeleton is created, every change is **Read `plan.md` → Edit exactly one tagged block**. Untouched sections must remain byte-identical — that is the determinism guarantee. Regenerating the whole file lets confirmed sections silently drift.
 
 ### Performative composition audit
-- **Detection:** Filling the Step 8 audit table with rows that describe a concern but produce no edit to the `§phases`/`§tasks` blocks in draft.md.
-- **Resolution:** Every audit row whose concern requires a plan change must drive a concrete tagged-block Edit on draft.md BEFORE the next row, or be escalated to the user. A table that only describes is bureaucracy.
+- **Detection:** Filling the Step 8 audit table with rows that describe a concern but produce no edit to the `§phases`/`§tasks` blocks.
+- **Resolution:** Every audit row whose concern requires a plan change must drive a concrete tagged-block Edit BEFORE the next row, or be escalated to the user. A table that only describes is bureaucracy.
 
-### Over-specified task drafts
-- **Detection:** A `Done when` cell that prescribes HOW — URLs, body schemas, exact symbol names, hook names, internal data structures.
-- **Resolution:** `Done when` states an observable outcome that did not exist before the task. Apply the executor-source test: "Reading this as the executor, will I still need to read source to figure out HOW?" If yes, you over-specified — rewrite as an outcome.
-
-### Author-biased feasibility
-- **Detection:** Running the feasibility trace/scenario walkthrough yourself in the main session because it is faster.
-- **Resolution:** The feasibility check runs as a separate-context subagent. You designed the plan, so your judgment of "would this work?" inherits your blind spots. The subagent reads it fresh.
+### Withholding grounded concretes (false anti-HOW)
+- **Detection:** Abstracting a concrete you already KNOW into a vague outcome — writing "shows the status" when discovery already found the exact status field, or "follows the existing pattern" when you read the real interface, or refusing to name the real permission constant you verified. The plan reads as outcome-only and the executor must re-derive what you already discovered.
+- **Resolution:** `Done when` is an observable outcome, but it MAY and SHOULD name the **grounded** concretes it creates or touches — real file paths, the real symbol/constant/route value verified in discovery, the real response fields. Concreteness is only a fault when it is *ungrounded* (a guess) or *internal HOW that discovery didn't fix* (which data structure, which loop). For a Significant decision, the `§analysis` **Committed approach** SHOULD carry a compact grounded sketch (a type/interface shape, a config/route entry, the key call) when it removes executor ambiguity — these earn their place. The bar: name what you grounded; defer what you didn't; never invent.
 
 ### Ad-hoc contract block
-- **Detection:** Writing a freeform "Shared contract", "Interface agreement", or similar prose paragraph anywhere in `draft.md` or `plan.md` to describe a cross-phase dependency, instead of using the `Provides`/`Needs` task columns.
+- **Detection:** Writing a freeform "Shared contract", "Interface agreement", or similar prose paragraph anywhere in `plan.md` to describe a cross-phase dependency, instead of using the `Provides`/`Needs` task columns.
 - **Resolution:** The two columns are the single authoritative cross-phase interface record. Put the producer semantic in `Provides` and the reference in the consumer's `Needs`. A prose block duplicates the fact in a place the executor does not read — delete it and use the columns.
 
-## File Structure & Editing Discipline
+## Plan File Structure & Editing Discipline
 
-This skill produces **two files** in `$PLAN_DIR`:
+`plan.md` is a clean human-readable markdown document whose sections are delimited by **HTML-comment tags**. HTML comments render invisibly, so the document stays readable, while the tag pairs are permanent, uniquely-addressable anchors.
 
-| File | Purpose | Lifetime | Editing Discipline |
-|------|---------|----------|---------------------|
-| `draft.md` | Working artifact + audit trail. Holds clarification log, decision classifications, rejected approach evaluations, composition audit, full feasibility output, direction-summary snapshot. | Built incrementally across Steps 1–9. Frozen at Step 11 with `[FROZEN at approval — {YYYY-MM-DD}]`. Never edited after. | **Tagged-block Edit only.** Read draft.md → Edit one `<!-- §name -->` … `<!-- /§name -->` block, delimiters included. Never `Write` after the skeleton exists. Untouched sections byte-identical. |
-| `plan.md` | Distilled final artifact. Holds scope, capabilities, distilled approach selection, component notes, phases, tasks (with Provides/Needs), risks, one-line feasibility summary. **This is what the executor reads.** | Materialized at Step 10 by composing from draft.md per distillation rules. Re-materialized each iteration if the user requests changes at Step 10. Status flipped from `draft` → `approved` at Step 11. | **Whole-file Write at Step 10** (clean re-derivation each iteration; no incremental editing). Targeted Edit at Step 11 ONLY for the `Status:` line. |
+**The skeleton is written once** (Step 4) with every tag pair present and bodies empty except the ones filled by then. **Every subsequent write or revision is a tagged-block Edit:**
 
-The draft.md skeleton is defined in [`draft-skeleton.md`](./draft-skeleton.md) — kept out of this file so the structure can be revised independently. Step 4 reads that file and writes it verbatim to `$PLAN_DIR/draft.md`; subsequent steps fill or revise the bodies between the `<!-- §… -->` tags via tagged-block Edits.
+> Read `plan.md` → Edit, replacing the entire `<!-- §name -->` … `<!-- /§name -->` block (delimiters included) with the rebuilt block. Change exactly one block per Edit. Never use the Write tool on `plan.md` after the skeleton exists.
 
-plan.md has no skeleton file — its shape is defined by the **distillation rules** in Step 10 (which sections to pull from draft.md, in which order, in what condensed form).
+This is deterministic because the tag pair never disappears (unlike a consumed placeholder) and the delimiter names make each block a unique `old_string`; sections you do not touch are preserved byte-for-byte.
+
+The skeleton itself is defined in [`plan-skeleton.md`](./plan-skeleton.md) — kept out of this file so the structure can be revised without churning the skill instructions. Step 4 reads that file and writes it verbatim to `$PLAN_DIR/plan.md`; subsequent steps then fill or revise the bodies between the `<!-- §… -->` tags via tagged-block Edits.
 
 ---
 
@@ -148,7 +135,7 @@ Ground the requirement before decomposing it.
 
 5. If every row is "None identified" — requirements are clear — skip the question rounds but still produce the consolidated requirement statement in Step 3.
 
-The Self-Check Findings table and the full Q&A log are persisted to draft.md at Step 4 (the Self-Check table to `§self-check`; every round's Q&A to `§clarification-log`). The clarification block also lives in the running conversation — Step 9 passes it inline to the feasibility subagent.
+Maintain a running **clarification block** in the conversation (every answer and constraint the user gave) — Step 9 passes it to the feasibility subagent.
 
 ### Step 3: Capability Decomposition + User Confirmation
 
@@ -170,21 +157,14 @@ Present to the user:
 
 Wait for explicit confirmation. Apply corrections and re-present until confirmed. **The confirmed capability list is the contract for the rest of the run** — later steps may not silently add or drop capabilities; a change requires returning here.
 
-### Step 4: Initialize Plan Directory & draft.md
+### Step 4: Initialize Plan Directory
 
 - Derive a kebab-case `{slug}` from the requirement (e.g., "Add CSV export to orders API" → `add-csv-export-orders-api`)
 - Compute `$PLAN_DIR = .workflow/plans/{YYMMDD}-{slug}/` where `{YYMMDD}` is today's date
 - Create the directory
-- **Write the full tagged skeleton to `$PLAN_DIR/draft.md` — once.** Read `.claude/skills/plan-fast/draft-skeleton.md` and Write its content verbatim to the new file (Write tool). Then Edit the tagged blocks that are known at this point:
-  - `§meta` (name, today's date, `Status: draft`)
-  - `§self-check` (the Self-Check Findings table built in Step 2; if Step 2 was skipped because no gaps existed, mark each row `None identified`)
-  - `§clarification-log` (every round from Step 2, with the user's verbatim answers; "None — requirements were unambiguous as written" if skipped)
-  - `§scope` (in/out from Steps 2–3)
-  - `§capabilities` (the confirmed list)
+- **Write the full tagged skeleton to `$PLAN_DIR/plan.md` — once.** Read `.claude/skills/plan-fast/plan-skeleton.md` and Write its content verbatim to the new file (Write tool). Then Edit the three tagged blocks that are known at this point: `§meta` (name, today's date, `Status: draft`), `§scope` (in/out from Steps 2–3), and `§capabilities` (the confirmed list). Leave every other tagged body as its placeholder text. This is the only Write to `plan.md`; from here on, every change is a Read → tagged-block Edit.
 
-  Leave every other tagged body as its placeholder text. This is the only Write to `draft.md`; from here on, every change is a Read → tagged-block Edit. **Do NOT create `plan.md` yet — it is materialized at Step 10.**
-
-State: "Wrote tagged skeleton to draft.md with Self-Check, Clarification Log, Scope, and {N} confirmed capabilities."
+State: "Wrote tagged skeleton with Scope + {N} confirmed capabilities to $PLAN_DIR/plan.md."
 
 ## Phase B: Parallel Discovery
 
@@ -194,16 +174,26 @@ Using the confirmed capabilities + `.workflow/project-overview.md` as the map, l
 
 Aim for the fewest subjects that cover the uncertain surface area. One subject is fine for an isolated change.
 
+**Integration-point checklist (mandatory).** Before writing the subjects, enumerate every place the plan will touch *existing* code — these are the concretes that, if guessed wrong, become feasibility bugs. **This is where grounding happens — get every integration point RIGHT here, upfront, so the plan is feasible from the first draft. There is no late verification pass; discovery IS the grounding.** Typical ones:
+- **Liveness — reject dead code (apply to EVERY point below).** A candidate that *exists* is not enough: confirm it is actually LIVE — reachable / called / rendered / mounted / route-registered — by grepping for its real callers/usages. A symbol with **zero callers, unmounted, or on no active route is DEAD CODE**; never build a mount, hook, gate, or intercept on it — that is the #1 silent feasibility disaster (e.g., choosing a component that turns out to have no callers). Between similar candidates, pick the one with a **verified real caller on the active path**.
+- **Host / attachment point** — which existing long-lived component/module/service a hook, listener, subscription, or background task attaches to (do NOT assume a particular entry point — verify where existing long-lived concerns actually attach). **Check lifecycle viability:** the host must persist for the feature's required lifetime AND sit inside the runtime contexts the code needs (the DI container / store / provider / session scope). Work that must outlive a single screen or run across the session (a background poller, a global listener, a subscription) attaches to a **long-lived host — the app shell / root layout / service layer** — NOT a short-lived view that is torn down when the user navigates away (that silently kills it). Resolve: "what is the long-lived host inside the required context, and does it survive the flow this feature needs?"
+- **Permission / access guard** — which *existing* permission/role/action constant guards the new entry point. Reuse a real one where a fitting one exists; a genuinely new surface may need a new constant — if so, follow the real naming convention you found and flag it as backend-dependent (don't silently assert it as existing).
+- **Injection / trigger point** — the existing handler/callback the new behavior hooks into (e.g., the post-save success callback). Note any lifecycle interaction (does that handler also tear down or redirect, ending the context?).
+- **Existing interface touched** — a response type, endpoint, parameter, or shared-state shape the plan reads or extends.
+
+Each integration point becomes a thing a discovery subject must resolve. **A core integration point (one the capability hinges on) must end up COMMITTED to a real grounded candidate — not deferred** (see "Over-deferral of a core decision"). Fold them into the subjects so the Explore agents return the *real* symbol + `path:line` + a note on lifecycle fit for each.
+
 ### Step 6: Spawn Explore Agents in Parallel
 
 Spawn one `Explore` subagent per subject — **all in a single message (multiple Agent tool calls)** so they run concurrently. Each prompt:
 - States exactly one discovery subject
 - Asks for conclusions and the specific constraints / patterns / integration points found (file path + line where it matters), not file dumps
+- **Explicitly asks the agent to resolve each integration point from the Step-5 checklist that falls in its subject — return the REAL symbol/path/value and `path:line`, AND proof it is LIVE: a real caller / usage / mount / route-registration at `path:line`. If a candidate has no callers/usages it is DEAD CODE — the agent must say so and NOT propose it as a mount/hook/gate point. Report "not found" if a point genuinely doesn't exist.** (e.g., "Where do existing long-lived listeners/tasks attach, and what proves that host is live (mounted, on an active route)? What is the real permission constant for this area? What is the existing post-save success handler, and what calls it?")
 - Specifies the search breadth ("medium" for a focused subject, "very thorough" if the subject spans multiple modules)
 
-Collect the returned findings. Read `draft.md` and Edit the `§component-notes` block — one bullet per concrete constraint or pattern that shapes a phase, task, or approach (cite `path:line`).
+Collect the returned findings. Read `plan.md` and Edit the `§component-notes` block — one bullet per concrete constraint or pattern that shapes a phase, task, or approach (cite `path:line`). **Every integration point from the Step-5 checklist gets a resolution line. A CORE integration point (one a capability hinges on) must be `COMMITTED` — the real chosen candidate + `path:line` + a **liveness citation (the real caller/mount/route at `path:line` proving it is not dead code)** + a one-line lifecycle/assumption note (e.g., "attach to the long-lived shell — outlives the page, inside the required context"). Only a non-core specific may be `DEFERRED — executor locates exact <line/field> via <search>`. If discovery couldn't confirm a core point, commit to the best-grounded candidate and mark it an assumption — do NOT defer the design choice. No integration point is left as an unstated assumption.**
 
-State: "Discovery complete ({N} subjects) — {M} component notes written to draft.md."
+State: "Discovery complete ({N} subjects) — {M} component notes written, {K} integration points resolved ({D} deferred)."
 
 ## Phase C: Plan Creation
 
@@ -219,25 +209,25 @@ Process the confirmed capabilities **one at a time**. For each, decide before de
 
 Complexity gate: if a capability has one obvious constrained/conventional approach, collapse its block to **Core problem** + **Committed approach** (skip the tables).
 
-Read `draft.md` and Edit the `§analysis` block, writing one per-capability sub-block (format in the skeleton). Every sub-block ends with `**Selected:**` (if significant) and `**Committed approach:**`. Keep the Decisions table (Classification + Cascade Trace) and Approach Evaluation tables in draft.md — they are part of the audit trail. Step 10 will choose which of these survive into plan.md.
+Read `plan.md` and Edit the `§analysis` block, writing one per-capability sub-block (format in the skeleton). Every sub-block ends with `**Selected:**` (if significant) and `**Committed approach:**`.
 
-State: "Wrote per-capability analysis for {N} capabilities to draft.md."
+State: "Wrote per-capability analysis for {N} capabilities."
 
 ### Step 8: Phase Grouping, Task Drafts & Composition Audit
 
-Produce each part, then apply it as a tagged-block Edit on draft.md.
+Produce each part, then apply it as a tagged-block Edit.
 
-**8.1 — Phase grouping.** Group capabilities into phases by cohesion and dependency order. Assign each phase an execution group (A, B, …). Phases in the same group run in parallel and MUST NOT modify the same files. A single capability may span phases if it has natural sequential stages. Read `draft.md`, Edit the `§phases` block.
+**8.1 — Phase grouping.** Group capabilities into phases by cohesion and dependency order. Assign each phase an execution group (A, B, …). Phases in the same group run in parallel and MUST NOT modify the same files. A single capability may span phases if it has natural sequential stages. Read `plan.md`, Edit the `§phases` block.
 
 **8.2 — Task drafts.** Per phase, draft the task table:
 - Each task is a coherent unit of work (≈ one commit's worth). Trivial 1–2 line standalone changes merge into a related task.
 - Task IDs `task-01`, `task-02`, … reset per phase.
-- Files are concrete paths from Step 6 discovery; mark non-existent paths `[new]`.
-- **`Done when` is ONE sentence describing an observable outcome** — a function/file/endpoint/UI element/behavior that exists after the task and did not before. State the user- or system-visible result; do NOT describe the steps. Apply the executor-source test.
+- Files are concrete paths from Step 6 discovery; mark non-existent paths `[new]`. A file that touches an *existing* integration point must use the **resolved** path/symbol from `§component-notes` — or, if that integration point was `DEFERRED`, the `Done when` says "locate per §component-notes" rather than naming a guessed location.
+- **`Done when` is ONE sentence describing an observable outcome** — a function/file/endpoint/UI element/behavior that exists after the task and did not before. State the user- or system-visible result. It SHOULD name the **grounded** concretes it creates or touches (real file paths, the real permission/route/symbol verified in discovery, the real response fields) — that concreteness is drop-in value, not over-specification. Do NOT prescribe internal HOW that discovery didn't fix (which data structure, which loop), and do NOT name any symbol/permission/mount you did not ground (reuse-or-defer instead — see the "Ungrounded concrete assertion" anti-pattern).
 - **`Provides` and `Needs` start as `—`.** They are filled in Step 8.3 when cross-phase dependencies are identified — do not guess them now.
 - No acceptance criteria, no test requirements — those are deliberately out of this skill.
 
-Edit the `§tasks` block in draft.md.
+Edit the `§tasks` block.
 
 **8.3 — Composition audit.** With phases and tasks committed, surface cross-phase concerns. Concern types:
 - **Transition** — a runtime control/data flow between phases. Every user-action → system-response path must be covered by Transition rows; a missing one is a plan gap.
@@ -248,9 +238,9 @@ Edit the `§tasks` block in draft.md.
 - On the **producer** task (Phase X) set `Provides` to `contract-NN: <name> — <one-line behavioral semantic>`. `NN` is sequential **within the producing phase** (`contract-01`, `contract-02`, …). The semantic is WHAT a consumer can rely on (purpose + what it returns/does), never a type literal or signature — the realized signature is filled later by the executor in `progress.md`, not here.
 - On every **consumer** task (Phase Y) set `Needs` to `Ph<X> contract-NN`.
 - Fill `Provides` ONLY when at least one task's `Needs` references it. A task with no cross-phase consumer keeps `Provides = —`. Internal helpers within a single phase are never contracts.
-- These two columns replace any prose dependency note. Do NOT write a freeform "Shared contract" paragraph or any other ad-hoc dependency block anywhere — the columns are authoritative.
+- These two columns replace any prose dependency note. Do NOT write a freeform "Shared contract" paragraph or any other ad-hoc dependency block anywhere in the plan — the columns are authoritative.
 
-**Remediation rule.** For every audit row whose concern requires a plan change, apply the tagged-block Edit on draft.md BEFORE the next row:
+**Remediation rule.** For every audit row whose concern requires a plan change, apply the tagged-block Edit BEFORE the next row:
 - Transition gap → Edit `§tasks`, add a wiring task row to the relevant phase
 - External Consumer needing update → Edit `§tasks`, add a task row to the phase owning the consumer surface
 - Group Ordering violation → Edit `§phases` to move the phase to a later group, and Edit `§tasks` to update its `(Execution Group X)` label
@@ -268,93 +258,60 @@ Then fill the row's `Notes` with the change made and set `Status` to `OK`. Re-ch
 >
 > Choose: (1) apply a manual edit you describe, (2) specify a different change, (3) accept the gap as a risk with rationale (recorded in Notes, Status → OK)."
 
-Do not proceed to Step 9 until every audit row is `Status = OK`. Edit the `§audit` block in draft.md.
+Do not proceed to Step 9 until every audit row is `Status = OK`. Edit the `§audit` block (build the table incrementally with the same tagged-block Edit each time it changes).
 
-State: "Wrote {P} phases, {T} tasks, audit with {R} rows (all OK) to draft.md."
+State: "Wrote {P} phases, {T} tasks, audit with {R} rows (all OK)."
 
-### Step 9: Feasibility Walkthrough (subagent — separate context)
+### Step 9: Coverage Self-Check (main session)
 
-Validate the plan with an independent reader before showing it to the user. This catches feasibility gaps your author bias hides.
+> **Grounding already happened — upfront, in discovery (Steps 5–6).** Every integration point was grounded
+> AND verified LIVE against the real code as it was discovered, so the plan is feasible by construction — there
+> is no separate late `src/`-verification subagent to run. This step is only a cheap coverage self-check.
 
-**9.1 — Pre-flight.** Read `draft.md`. Confirm `§scope`, `§capabilities`, `§analysis`, `§phases`, `§tasks`, `§audit` have real content (not skeleton placeholder text) and every audit row is `OK`. If not, return to the owning step.
+**9.1 — Pre-flight.** Read `plan.md`. Confirm `§scope`, `§capabilities`, `§analysis`, `§phases`, `§tasks`, `§audit`, `§component-notes` have real content (not skeleton placeholder text). If not, return to the owning step.
 
-**9.2 — Spawn.** Read the prompt template `.claude/skills/plan-fast/feasibility-prompt.md`. Per its **For Orchestrator — Data to Collect** section, collect the data items (the `draft.md` path; the in-scope requirements as an inline bulleted list; the clarification block as an inline bulleted list). Fill the `{placeholders}` in **For Subagent — Prompt to Pass**. Spawn the **feasibility-validator** subagent (`.claude/agents/feasibility-validator.md`, read-only) **in foreground**, passing the filled "For Subagent" section as the prompt.
+**9.2 — Coverage check (yourself, in the main session).** Map each in-scope requirement to the delivering task(s). For any requirement with no delivering task, Edit `§tasks` to add the missing task.
 
-**9.3 — Parse & apply** per the template's **For Orchestrator — Expected Output**:
-- **`PASS`** → Edit the `§feasibility-full` block in draft.md with the subagent's Requirement Satisfaction Trace + Scenario Walkthrough verbatim (including the pre-registered questions, for the audit trail); Edit the `§risks` block in draft.md to reflect any unresolved scenario notes and ACCEPTED RISKs; proceed to Step 10.
-- **`FAIL_REVISION_NEEDED`** → for each non-satisfied trace row AND for each `MISSING`/`WEAK` scenario invariant, Edit the affected `§tasks`/`§phases`/`§analysis` block in draft.md, then re-spawn (**max 2 revision rounds total**). If still failing after 2 rounds, present findings to the user and ask how to proceed.
-- **`FAIL_AMBIGUOUS`** → present the Escalations table to the user, get answers, update the clarification block (and Edit `§clarification-log` in draft.md to record the new round), re-spawn.
+**9.3 — Record.** Edit the `§feasibility` block with the Coverage Check table only (requirement → delivering tasks, one row each). Fold any accepted gaps or known-unknowns into `§risks`.
 
-State: "Feasibility: {Result} — trace {N}/{Total} satisfied, scenarios {M}/{Total} passed."
+State: "Coverage {N}/{Total} requirements (grounding done upfront in discovery)."
 
-## Phase D: Materialize, Review, Finalize
+## Phase D: Checkpoint & Finalize
 
-### Step 10: Materialize plan.md + User Checkpoint
+### Step 10: Direction Summary & User Checkpoint
 
-draft.md is complete and feasibility passed. Now distill draft.md into `plan.md` and write it to disk for the user to review.
+The user understands intent better than any agent — this single checkpoint is the only human review this skill has. Present, in one message:
 
-**10.1 — Apply the distillation rules.** Read draft.md fully. Compose plan.md by selecting from each draft section per the table below; **everything not listed is draft-only** (stays in draft.md, does not appear in plan.md):
+- Plan name + scope
+- The confirmed capability list
+- Per-capability **Selected/Committed** lines (significant decisions as a small table: Decision | Options | Selected | Rationale)
+- Phase/group overview with dependencies
+- **Main flow diagram** — a runtime arrow flow (not build order) showing how the assembled pieces connect, each step labelled with the phase that produces it. Example: `User Action → API Endpoint (Ph2) → Permission Check (Ph2) → CSV Serializer (Ph1) → Stream Response (Ph2)`. A transition no phase covers is a visible gap.
+- Top risks
 
-| draft.md section | What goes into plan.md |
-|------------------|------------------------|
-| `§meta` | `§meta` — same identity (name, date), `**Status:** draft` (will flip at Step 11), `**Source:** draft.md`, `**Note:** Run /execute-fast to implement.` |
-| `§self-check` | **Draft-only.** Not in plan.md. |
-| `§clarification-log` | **Draft-only.** Not in plan.md. |
-| `§scope` | `§scope` — verbatim. |
-| `§capabilities` | `§capabilities` — verbatim. |
-| `§analysis` (per capability) | `§approaches` — per capability: `Core problem` (one sentence), `**Selected:**` and `**Committed approach:**` lines. **IF the capability had a Significant decision**, ALSO include its Approach Evaluation table (the trade-offs are informative for the executor). Otherwise omit the Approach Evaluation table. Never include the Decisions classification table or the Cascade Trace — those are draft-only reasoning artifacts. |
-| `§component-notes` | `§component-notes` — verbatim. |
-| `§phases` | `§phases` — verbatim. |
-| `§tasks` | `§tasks` — verbatim (full table with Provides/Needs/Done when). |
-| `§audit` | **Draft-only.** Not in plan.md. |
-| `§feasibility-full` | `§feasibility-summary` — one paragraph: `"Validated against {N} scenarios ({H} happy / {E} edge / {F} failure); {invariants_evidenced}/{total} EVIDENCED. See draft.md §feasibility-full for the full Trace, pre-registered questions, and evidence verdicts."` |
-| `§risks` | `§risks` — verbatim. |
-| `§direction-summary` | **Draft-only.** Filled after user approval; not in plan.md. |
+Ask: "Approve to finalize, or tell me what to change."
 
-**10.2 — Write plan.md** (full file Write to `$PLAN_DIR/plan.md`) following the section order: `§meta`, `§scope`, `§capabilities`, `§approaches`, `§component-notes`, `§phases`, `§tasks`, `§feasibility-summary`, `§risks`. Each section delimited by the same `<!-- §name --> … <!-- /§name -->` tag pairs (the executor uses these as section anchors).
-
-**10.3 — Present to the user:**
-
-> "Plan materialized at `$PLAN_DIR/plan.md` ({N} phases, {T} tasks). Open it and review.
->
-> Full reasoning, decision classifications, composition audit, and the pre-registered feasibility questions + verdicts are in `$PLAN_DIR/draft.md` if you want to see why the plan is shaped this way.
->
-> Approve to finalize, or tell me what to change."
-
-**10.4 — Handle the response.**
-
-- **Approval** → proceed to Step 11.
-- **Change request** → identify the affected draft.md section(s), apply the tagged-block Edit(s) on draft.md (never on plan.md), then re-run Step 10.1–10.3. plan.md is regenerated from draft.md each iteration. The "re-enter only the affected step" rule:
-  - Disagreement with a capability → Step 3 (re-confirm), then ripple through draft sections
-  - Disagreement with an approach → Step 7 for that capability only (Edit `§analysis`)
-  - Structural change (phases/tasks/grouping) → Step 8 (Edit `§phases`/`§tasks`, re-audit `§audit`)
-  - Reject an ACCEPTED RISK or want a `MISSING`/`WEAK` scenario invariant handled differently → Edit the relevant draft.md block (`§tasks` etc.) and re-spawn the feasibility subagent (Step 9), which rewrites `§feasibility-full`
-
-  After any draft.md edit, re-materialize plan.md (Step 10.1–10.2) and re-present.
+On change requests, re-enter only the affected step (apply changes via tagged-block Edit):
+- Disagreement with a capability → Step 3 (re-confirm), then ripple forward
+- Disagreement with an approach → Step 7 for that capability only
+- Structural change (phases/tasks/grouping) → Step 8 (regroup / redraft / re-audit)
+- Reject an accepted deferral/risk → Edit the relevant `plan.md` block and re-run the coverage self-check (Step 9)
 
 Re-present until approved.
 
-### Step 11: Finalize & Freeze
+### Step 11: Finalize
 
-The user approved the plan.md from Step 10. Now lock it.
+The assembled `plan.md` now contains every piece of context — capabilities, approaches, phases, tasks, audit, feasibility. Use it as the single source of truth for the final consistency pass.
 
-1. **Self-verify cross-section coherence** on the just-approved plan.md. Read plan.md end to end and check:
-   - Every confirmed capability is delivered by ≥1 task in `§tasks`.
-   - Every `§phases` group ordering is consistent (producer phase's group strictly earlier than every consumer's).
-   - **Interface integrity:** every `Needs Ph<X> contract-NN` resolves to exactly one task whose `Provides` declares that `contract-NN` in Phase X; every `Provides` is referenced by at least one `Needs` (no unconsumed contracts).
-   - `§risks` reflects the scenario walkthrough outcomes (any ACCEPTED RISKs and any unresolved WEAK/MISSING notes referenced in §feasibility-summary).
-
-   If any inconsistency is found, fix it via Step 10's flow (edit draft.md → re-materialize plan.md → re-present), not by editing plan.md directly.
-
-2. **Flip plan.md status:** Edit only the `Status:` line in plan.md's `§meta` block: `draft` → `approved`. This is the single permitted Edit on plan.md (everywhere else it is whole-file Write at Step 10).
-
-3. **Edit draft.md §direction-summary** to record what the user approved: today's date, the confirmed capability list (or "as in §capabilities"), the feasibility result, and any explicitly-accepted risks.
-
-4. **Freeze draft.md.** Edit draft.md's `§meta` block: append the line `**Status:** FROZEN at approval — {YYYY-MM-DD}`. From this point, draft.md is the historical audit trail and must not be edited. If the plan is later revised, the convention is to either copy `$PLAN_DIR` to a new dated suffix or to add a new round section in draft.md — that decision is out of scope for this skill.
-
-5. **Tell the user:**
-
-   > "Plan approved at `$PLAN_DIR/plan.md`. draft.md is preserved as the audit trail (frozen). Run `/execute-fast` to implement — it tracks progress and realized interfaces in `$PLAN_DIR/progress.md` without modifying either of these files."
+1. **Read the full `plan.md`** end to end. Self-verify cross-section coherence:
+   - Every confirmed capability is delivered by ≥1 task in `§tasks`
+   - Every `§phases` group ordering is consistent with the `§audit` Group Ordering rows
+   - The Coverage Check in `§feasibility` matches the current `§tasks` (no row references a task that was later edited away)
+   - **Interface integrity:** every `Needs` cell `Ph<X> contract-NN` resolves to exactly one task whose `Provides` declares that `contract-NN` in Phase X, and that producing phase's execution group is strictly earlier than the consumer's; every `Provides` is referenced by at least one `Needs` (an unconsumed contract is over-declaration — clear it to `—`)
+   - `§risks` reflects the scenario walkthrough outcomes (any ACCEPTED RISKs and any unresolved WEAK/MISSING notes)
+   If any inconsistency is found, fix it with a single tagged-block Edit and re-Read to confirm.
+2. Edit the `§meta` block: change `**Status:** draft` → `**Status:** approved`.
+3. Tell the user: "Plan approved at `$PLAN_DIR/plan.md`. Run the fast execution skill (`/execute-fast`) to implement it — it tracks progress and realized interfaces in `$PLAN_DIR/progress.md` without modifying this plan."
 
 ## Questions This Skill Answers
 

@@ -77,9 +77,13 @@
 <!-- /§audit -->
 
 <!-- §feasibility -->
-## Feasibility
+## Grounding & Coverage
 
-[Requirement Satisfaction Trace + Scenario Walkthrough — pasted verbatim from the feasibility subagent]
+**Grounding:** [N concretes verified, M corrected, D deferred — 0 invented remaining]
+
+| Requirement | Delivering Task(s) | Covered |
+|-------------|--------------------|---------|
+| [requirement] | Ph1/task-02 → Ph2/task-01 | yes |
 <!-- /§feasibility -->
 
 <!-- §risks -->

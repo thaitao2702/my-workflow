@@ -1,6 +1,6 @@
-# Feasibility Validator Prompt Template (plan-fast — single draft.md)
+# Feasibility Validator Prompt Template (plan-fast — single plan.md)
 
-Drives the `feasibility-validator` agent against the **working draft** (`draft.md`) — not against `plan.md`, which doesn't exist yet at this point in the flow. The prompt below overrides the agent's default methodology in two ways: it tells the subagent to read **one** file (not the five-file artifact set the persona describes) and it requires a **two-phase load** so that scenario questions are pre-registered from the requirement *before* the draft is read.
+Drives the `feasibility-validator` agent against a **single markdown plan** (`plan.md`). The prompt below overrides the agent's default methodology in two ways: it tells the subagent to read **one** file (not the five-file artifact set the persona describes) and it requires a **two-phase load** so that scenario questions are pre-registered from the requirement *before* the plan is read.
 
 ## For Orchestrator — Data to Collect
 
@@ -8,7 +8,7 @@ Collect paths as raw strings; pass inline blocks as raw bulleted text. Do not pa
 
 | Placeholder | Source |
 |-------------|--------|
-| `{draft_md_path}` | `$PLAN_DIR/draft.md` — the in-progress draft (Scope, Capabilities, Per-Capability Analysis, Component Notes, Phases, Tasks, Composition Audit all present; `§feasibility-full` and `§risks` may be empty) |
+| `{plan_md_path}` | `$PLAN_DIR/plan.md` — the in-progress plan (Scope, Capabilities, Per-Capability Analysis, Component Notes, Phases, Tasks, Composition Audit all present; Feasibility/Risks may be empty) |
 | `{project_overview_path}` | `.workflow/project-overview.md` — pass the path, or `None` if the file doesn't exist |
 | `{requirements_in_scope}` | Inline bulleted list of confirmed in-scope requirements from Phase A (Steps 2–3). One `- requirement` per line. |
 | `{user_clarification}` | Inline bulleted list of every clarification answer/constraint from Phase A. One `- answer or constraint` per line. If none occurred, pass `- None — requirements were unambiguous as written`. |
@@ -17,14 +17,14 @@ Collect paths as raw strings; pass inline blocks as raw bulleted text. Do not pa
 
 Replace `{placeholders}` with collected values. Pass everything below this line as the subagent prompt.
 
-You are validating the working draft of a markdown execution plan. **Ignore any instinct to load five separate artifact files — this draft is one file.** This task also requires a **strict two-phase load**: you must generate scenario questions from the requirement BEFORE reading the draft. Reading the draft first would let your questions get shaped by what the plan happens to contain, defeating the purpose of an independent review.
+You are validating a single markdown execution plan. **Ignore any instinct to load five separate artifact files — this plan is one file.** This task also requires a **strict two-phase load**: you must generate scenario questions from the requirement BEFORE reading the plan. Reading the plan first would let your questions get shaped by what the plan happens to contain, defeating the purpose of an independent review.
 
 ### Phase 1 — Load REQUIREMENT context only
 
 Issue these Read calls (and ONLY these) in a single response:
 - `{project_overview_path}` — architectural context (skip if `None`).
 
-Then read the inline blocks below carefully. **Do NOT Read `{draft_md_path}` in this phase.** Pre-registration depends on this ordering.
+Then read the inline blocks below carefully. **Do NOT Read `{plan_md_path}` in this phase.** Pre-registration depends on this ordering.
 
 **In-scope requirements (from Phase A):**
 {requirements_in_scope}
@@ -32,9 +32,9 @@ Then read the inline blocks below carefully. **Do NOT Read `{draft_md_path}` in 
 **User-clarification block (authoritative — do NOT flag gaps the user has already resolved):**
 {user_clarification}
 
-### Phase 2 — Pre-register scenarios and invariant questions (BEFORE reading the draft)
+### Phase 2 — Pre-register scenarios and invariant questions (BEFORE reading the plan)
 
-From the requirement + clarifications alone — without touching `{draft_md_path}` — derive scenarios and their invariant questions. **Emit them in your response text now, before any further tool call.** This commits the pre-registered list.
+From the requirement + clarifications alone — without touching `{plan_md_path}` — derive scenarios and their invariant questions. **Emit them in your response text now, before any further tool call.** This commits the pre-registered list.
 
 **Scenario floor** (must hit the floor; no upper cap — pick as many as the requirement warrants):
 
@@ -55,12 +55,12 @@ For each scenario, write **3–7 invariant questions** in interrogative form. Ex
 
 **Stop rule.** If a question would require reading source code to verify a type literal, exact name, transform shape, or framework flag — you have drifted into execute-time territory. Rewrite it at the observable level. If you genuinely cannot, surface it as `implementation_in_plan` in Escalations.
 
-### Phase 3 — NOW read the draft
+### Phase 3 — NOW read the plan
 
 Issue this Read call:
-- `{draft_md_path}` — the whole draft. Sections you will use: `§scope`, `§capabilities`, `§analysis` (Per-Capability Analysis), `§component-notes`, `§phases`, `§tasks` (per-phase tables with `Done when`, `Provides`, `Needs` columns), `§audit` (Composition Audit with Status/Notes).
+- `{plan_md_path}` — the whole plan. Sections you will use: `## Scope`, `## Capabilities`, `## Per-Capability Analysis & Approach Selection`, `## Component Notes`, `## Phases`, `## Tasks` (per-phase tables with `Done when`, `Provides`, `Needs` columns), `## Composition Audit` (table with Status/Notes).
 
-Your pre-registered questions are already committed in the response above. They do not change based on what you find in the draft.
+Your pre-registered questions are already committed in the response above. They do not change based on what you find in the plan.
 
 ### Phase 4 — Requirement Satisfaction Trace
 
@@ -145,13 +145,13 @@ When uncertain between PASS and FAIL_REVISION_NEEDED, choose FAIL_REVISION_NEEDE
 |---------|-----------|-----------|
 | `## Status` | `**Result**`: PASS ∣ FAIL_REVISION_NEEDED ∣ FAIL_AMBIGUOUS | Decide: accept, revise, or escalate |
 | | `**Trace_Pass_Count**`: N/Total; `**Scenarios_Passed**`: N/Total; `**Missing_Evidence**`: int | Coverage + depth gauge |
-| `## Requirement Satisfaction Trace` | `Requirement`, `Plan Path`, `Artifact After Plan Completes`, `Verdict`, `Gap` | For each non-DEMONSTRABLY_SATISFIED verdict: Edit `§tasks` in draft.md to close the Gap |
-| `## Scenario Walkthrough` | Per scenario: name, classification, `Why`, `Setup`, Invariants table (`Question`, `Evidence`, `Verdict`), `Scenario Verdict` | For each `MISSING` or `WEAK` invariant: Edit `§tasks` in draft.md (or `§phases` / `§analysis` if structural) to add or strengthen a task whose `Done when` delivers the invariant. Then re-spawn. |
+| `## Requirement Satisfaction Trace` | `Requirement`, `Plan Path`, `Artifact After Plan Completes`, `Verdict`, `Gap` | For each non-DEMONSTRABLY_SATISFIED verdict: Edit `§tasks` to close the Gap |
+| `## Scenario Walkthrough` | Per scenario: name, classification, `Why`, `Setup`, Invariants table (`Question`, `Evidence`, `Verdict`), `Scenario Verdict` | For each `MISSING` or `WEAK` invariant: Edit `§tasks` (or `§phases` / `§analysis` if structural) to add or strengthen a task whose `Done when` delivers the invariant. Then re-spawn. |
 | `## Escalations` | Type, Description | If any rows: present to user before continuing |
 
 **Orchestrator action by Result:**
-- `PASS` → paste the Trace + Scenario Walkthrough verbatim into the `§feasibility-full` block of `draft.md` (including the pre-registered questions — they are part of the audit trail); fold any open or `WEAK`-mitigation notes into the `§risks` block of `draft.md`; proceed to Step 10.
-- `FAIL_REVISION_NEEDED` → for each non-satisfied Trace row AND for each `MISSING`/`WEAK` invariant, Edit the affected sections of `draft.md` (`§tasks` most often; `§phases` or `§analysis` if the gap is structural). Re-spawn the subagent (**max 2 revision rounds total**). If still failing after 2 rounds, present findings to the user and ask how to proceed.
-- `FAIL_AMBIGUOUS` → present Escalations to the user; on receiving clarification, update the inline `{user_clarification}` block (and Edit `§clarification-log` in draft.md to record the new round) and re-spawn.
+- `PASS` → paste the Trace + Scenario Walkthrough verbatim into the `## Feasibility` section of `plan.md`; fold any open or `WEAK`-mitigation notes into `## Risks`; proceed to Step 11.
+- `FAIL_REVISION_NEEDED` → for each non-satisfied Trace row AND for each `MISSING`/`WEAK` invariant, Edit the affected sections of `plan.md` (`§tasks` most often; `§phases` or `§analysis` if the gap is structural). Re-spawn the subagent (**max 2 revision rounds total**). If still failing after 2 rounds, present findings to the user and ask how to proceed.
+- `FAIL_AMBIGUOUS` → present Escalations to the user; on receiving clarification, update the inline `{user_clarification}` block and re-spawn.
 
 Escalation type meanings: `clarification_conflict` (clarification block contradicts the plan), `ambiguous_requirement` (an in-scope item can't be evaluated), `external_unknown` (depends on an unverified external system), `implementation_in_plan` (a `Done when` prescribes HOW — rewrite it as an outcome before proceeding).
